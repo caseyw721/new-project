@@ -4,6 +4,7 @@
 
 - We're building a small device you wear on your hand. It moves the cursor, and later it will
   pinch, click, drag and turn knobs.
+- **Lowest lag is the #1 priority.** When lag and anything else conflict, lag wins.
 - **Step one is getting the cursor to feel perfect**: instant and smooth, with no shake and no
   drift. Everything else (pinch types, knob turning, the device's final shape) comes after that.
 - **The plan is to use a motion sensor**, the same kind of chip that knows how your phone is
@@ -25,7 +26,8 @@ Each phase answers one question. We don't buy parts for a phase until the one be
   test rigs and run the test app.
 - **Claude:** writes the software for the boards and the receiver, plus a test app on your
   computer that measures lag, shake and accuracy.
-- **Done when:** one sensor and one hand position come close to a normal mouse on the test app.
+- **Done when:** we find the setup with the **lowest lag**, matching a wired gaming mouse within
+  a couple of milliseconds, that is also accurate enough for editing.
 
 ### Phase 2: Pinch and knob gestures
 **Question:** How does the device sense different pinches (tap, hold, double-tap,
@@ -61,16 +63,20 @@ most of these.
 |---|---|---|---|---|
 | **Seeed Studio XIAO nRF52840 Sense** | A thumbnail-sized computer with a motion sensor and wireless built in. This is the test "controller." | 2 | $16 each | **Yes** |
 | **Nordic nRF52840 Dongle** (part number PCA10059) | A USB stick that receives the controller's signal. It's faster than Bluetooth, like a gaming mouse receiver. | 1 | $10 | **Yes** |
-| **ICM-42688-P breakout board** | A second, lower-noise motion sensor to compare against the built-in one. It wires onto the second XIAO. | 1 | $15–20 | **Yes** |
+| **ICM-42688-P breakout board** | The favorite motion sensor. It's lower-noise, so it needs less smoothing, which means less lag. It wires onto the second XIAO and gets compared with the built-in one. | 1 | $15–20 | **Yes** |
 | **3.7V LiPo battery, ~100mAh** (small, flat, 2-wire) | Makes the test rigs wireless. | 2 | $6 each | **Yes** |
 | Velcro straps / finger straps (a small assorted pack) | Hold the boards on your wrist, the back of your hand, your finger. | 1 pack | $8 | **Yes** |
 | USB-C cable (data, not charge-only) | Loads the software onto the boards. | 1–2 | $5 | If you don't have one |
 | Jumper wires + pin headers (small kit) | Connect the second sensor. | 1 kit | $6 | **Yes** |
 | Soldering iron kit (basic, with solder) | Attaching wires and batteries. | 1 | $25–40 | If you don't own one |
+| A wired gaming mouse (any 1000 Hz mouse) | The "fastest possible" reference we measure the controller against. | 1 | $0 if you have one, ~$25 if not | **Yes** |
 | **Ultraleap Leap Motion Controller 2** | A camera that tracks bare hands. It's a comparison benchmark, not part of the product. | 1 | ~$140 | Optional |
 
 **You'll also need:** a phone that records slow-motion video at 240 fps (most recent iPhones and
 Androids do). We use it to measure lag by filming your hand and the screen together.
+
+**Worth knowing:** if your monitor runs at 60 Hz, a **120 Hz or faster monitor** is the biggest
+lag cut outside the controller (up to ~8 ms). It's not needed for testing and isn't in the totals.
 
 **Rough totals**
 - Required parts only: **about $90**
@@ -81,6 +87,7 @@ Androids do). We use it to measure lag by filming your hand and the screen toget
 
 ## Decisions so far
 
+- **Lowest lag is the top priority.** It's the first test result we judge by.
 - **Pointing alone selects.** "Move **this**" means whatever you're pointing at. No pinch is
   needed.
 - **Where it goes can come from pointing or from voice:** "over there", "to 5", "up", "to a new
