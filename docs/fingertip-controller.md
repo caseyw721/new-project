@@ -2,6 +2,20 @@
 
 Status: draft design · 2026-09-25
 
+> **Status update: this doc is parked.** The controller hardware is being designed first, in
+> [`controller/`](controller/README.md) (start with the README). This doc comes back in Phase 5,
+> when the controller gets connected to the DAW.
+>
+> Decisions made since this draft, which override the sections below:
+> - **Pointing alone selects.** "Move **this**" means whatever you're pointing at when you say
+>   "this". No pinch is needed. Pinch becomes optional (drag, confirm, multi-select).
+> - **The destination comes from pointing or voice**: "over there", "to 5", "up", "to a new
+>   track". Numbers are read in context: on a pan knob, "5" is a pan value; on an audio or MIDI
+>   region, it's a position on its track or another track.
+> - **The command structure stays open-ended** until the build's scope is better understood. No
+>   fixed command list or grammar yet.
+> - **Worn only while editing and mixing**, not while playing.
+
 ## Why
 
 Voice alone makes the user *describe* things the eye can already see:
