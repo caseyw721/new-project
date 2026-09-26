@@ -64,13 +64,27 @@ most of these.
 | **Seeed Studio XIAO nRF52840 Sense** | A thumbnail-sized computer with a motion sensor and wireless built in. This is the test "controller." | 2 | $16 each | **Yes** |
 | **Nordic nRF52840 Dongle** (part number PCA10059) | A USB stick that receives the controller's signal. It's faster than Bluetooth, like a gaming mouse receiver. | 1 | $10 | **Yes** |
 | **ICM-42688-P breakout board** | The favorite motion sensor. It's lower-noise, so it needs less smoothing, which means less lag. It wires onto the second XIAO and gets compared with the built-in one. | 1 | $15–20 | **Yes** |
-| **3.7V LiPo battery, ~100mAh** (small, flat, 2-wire) | Makes the test rigs wireless. | 2 | $6 each | **Yes** |
+| **3.7V LiPo battery, 100–150mAh, with protection circuit** (single cell, flat, 2 wires) | Makes the test rigs wireless. About postage-stamp size. See "Battery notes" below. | 2 (+2 spares) | $5–8 each | **Yes** |
 | Velcro straps / finger straps (a small assorted pack) | Hold the boards on your wrist, the back of your hand, your finger. | 1 pack | $8 | **Yes** |
 | USB-C cable (data, not charge-only) | Loads the software onto the boards. | 1–2 | $5 | If you don't have one |
 | Jumper wires + pin headers (small kit) | Connect the second sensor. | 1 kit | $6 | **Yes** |
 | Soldering iron kit (basic, with solder) | Attaching wires and batteries. | 1 | $25–40 | If you don't own one |
 | A wired gaming mouse (any 1000 Hz mouse) | The "fastest possible" reference we measure the controller against. | 1 | $0 if you have one, ~$25 if not | **Yes** |
 | **Ultraleap Leap Motion Controller 2** | A camera that tracks bare hands. It's a comparison benchmark, not part of the product. | 1 | ~$140 | Optional |
+
+**Battery notes**
+- **3.7V, single cell** (sometimes written "1S"). Not 7.4V.
+- **100–150mAh.** The XIAO charges gently (50–100mA), and this size suits that. It should
+  last a full day of testing (estimate, to be measured).
+- **Must say "with protection board/circuit."** It's a tiny safety board under the tape that stops
+  over-charging and short circuits.
+- **Size codes:** names like `401230` mean thickness 4.0mm × width 12mm × length 30mm. Pick
+  one around 20–30mm long.
+- **Wires:** bare wires or a small plug are both fine (the plug gets cut off). If you cut wires,
+  cut **one at a time** so they never touch.
+- **Safety:** don't bend or puncture it. Charge it on a hard surface, not a bed or couch. Stop
+  using it if it swells.
+- The final ring (Phase 3/4) will likely use a smaller, curved battery. That's decided later.
 
 **You'll also need:** a phone that records slow-motion video at 240 fps (most recent iPhones and
 Androids do). We use it to measure lag by filming your hand and the screen together.
