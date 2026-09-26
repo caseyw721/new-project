@@ -17,7 +17,7 @@ Everything you need is in this repo:
 | `controller/firmware/prebuilt/receiver.hex` | Software for the Nordic dongle (the receiver) |
 | `controller/test-app/index.html` | The test app (opens in Chrome) |
 
-To get the files, open the repo on GitHub, go to the branch `claude/remote-control-6eakce`, and click
+To get the files, open https://github.com/caseyw721/new-project (branch `main`) and click
 **Code → Download ZIP**.
 
 ---
