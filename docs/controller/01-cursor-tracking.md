@@ -59,7 +59,8 @@ Lag adds up in a chain. Each link matters:
 3. **Read the sensor 1000+ times per second**, and set the sensor's own built-in smoothing to its
    fastest setting.
 4. **Use the lowest-noise sensor we can get.** A cleaner signal needs less smoothing, and less
-   smoothing means less lag. This is why the ICM-42688-P is the favorite.
+   smoothing means less lag. We start with the XIAO's built-in sensor, and if it's too noisy we add
+   the lower-noise ICM-42688-P.
 5. **Smooth only when your hand is almost still** (to kill shake). When you move, the smoothing
    gets out of the way.
 6. **Try "prediction" in testing.** Guess where the cursor will be a few milliseconds ahead from
@@ -120,7 +121,9 @@ the device in Phase 3.
 
 **Setup**
 - **Test controller A:** a XIAO board using its built-in motion sensor.
-- **Test controller B:** a XIAO board with the lower-noise ICM-42688-P sensor wired on.
+- **Test controller B:** a second identical XIAO. It lets us compare two hand positions side by
+  side, and it's a spare. If the built-in sensor turns out too noisy, the ICM-42688-P gets wired
+  onto this one.
 - Both talk to the computer through the Nordic USB receiver.
 - Velcro straps move them between the wrist, back of hand, finger base and fingertip.
 - **Comparisons:** your normal mouse and, optionally, the Leap Motion.
