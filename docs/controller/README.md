@@ -118,6 +118,7 @@ lag cut outside the controller (up to ~8 ms). It's not needed for testing and is
 | File | What's in it |
 |---|---|
 | [01-cursor-tracking.md](01-cursor-tracking.md) | Which tracking method we chose and why, plus how Phase 1 testing works |
+| [03-daw-integration.md](03-daw-integration.md) | How it will work with Pro Tools, Logic, Ableton and others (Phase 5 plan) |
 | [02-phase1-setup-guide.md](02-phase1-setup-guide.md) | **Step by step:** solder, load the software, calibrate, run the tests |
 | [../../controller/README.md](../../controller/README.md) | For changing the code: how the software is organized |
 | [../fingertip-controller.md](../fingertip-controller.md) | The original big-picture concept (voice + pointing in the DAW). Parked until Phase 5. |
