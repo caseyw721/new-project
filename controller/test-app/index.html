@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pointer Test Bench</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2230; --muted: #5d6679;
+    --line: #dde1e8; --accent: #2f6fed; --accent-ink: #ffffff;
+    --good: #1f8a4c; --warn: #b7791f; --bad: #c53030; --target: #2f6fed;
+    --target-hit: #1f8a4c; --field: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b2029; --ink: #e7eaf0; --muted: #9aa3b5;
+      --line: #2c3340; --accent: #5b8cff; --accent-ink: #0b1020;
+      --good: #48bb78; --warn: #ecc94b; --bad: #fc8181; --target: #5b8cff;
+      --target-hit: #48bb78; --field: #232a35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+           padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button { background: none; color: var(--muted); border: 0; padding: 8px 12px;
+               border-radius: 8px; font: inherit; cursor: pointer; }
+  nav button.on { background: var(--field); color: var(--ink); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  section { display: none; }
+  section.on { display: block; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           padding: 16px 18px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin: 0 0 8px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px;
+               padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.btn.secondary { background: var(--field); color: var(--ink); }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  select, input[type=text], input[type=number] {
+    background: var(--field); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font: inherit; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .stat { background: var(--field); border-radius: 10px; padding: 10px 12px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 13px;
+          background: var(--field); }
+  .pill.good { color: var(--good); } .pill.bad { color: var(--bad); } .pill.warn { color: var(--warn); }
+  .slider { display: grid; grid-template-columns: 170px 1fr 80px; gap: 12px; align-items: center;
+            margin: 8px 0; }
+  .slider input[type=range] { width: 100%; }
+  .slider .val { font-variant-numeric: tabular-nums; text-align: right; }
+  .steps { counter-reset: step; }
+  .step { border-left: 3px solid var(--line); padding: 4px 0 10px 14px; margin-bottom: 8px; }
+  .step.active { border-color: var(--accent); }
+  .step.done { border-color: var(--good); }
+  .step h3 { margin: 0 0 4px; font-size: 15px; }
+  .arena { position: relative; background: var(--field); border-radius: 12px; overflow: hidden;
+           user-select: none; touch-action: none; }
+  canvas { display: block; width: 100%; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  th { color: var(--muted); font-weight: 600; }
+  #flash { height: 360px; background: #000; border-radius: 12px; display: flex; align-items: center;
+           justify-content: center; color: #666; font-size: 18px; text-align: center; padding: 20px; }
+  #log { height: 320px; overflow: auto; background: var(--field); border-radius: 10px; padding: 10px;
+         font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+  .warnbox { border: 1px solid var(--warn); color: var(--warn); border-radius: 10px; padding: 10px 14px; }
+  kbd { background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pointer Test Bench</h1>
+  <nav id="tabs">
+    <button data-tab="connect" class="on">1. Connect</button>
+    <button data-tab="calibrate">2. Calibrate</button>
+    <button data-tab="tune">3. Tune</button>
+    <button data-tab="tests">4. Tests</button>
+    <button data-tab="results">Results</button>
+    <button data-tab="console">Console</button>
+  </nav>
+  <span style="flex:1"></span>
+  <label class="row" style="gap:6px">Testing:
+    <select id="setup">
+      <option>Ring on wrist</option>
+      <option>Ring on back of hand</option>
+      <option>Ring at finger base</option>
+      <option>Ring on fingertip</option>
+      <option>Ring wired (USB cable)</option>
+      <option>Normal mouse</option>
+    </select>
+  </label>
+  <span id="connPill" class="pill bad">Not connected</span>
+</header>
+
+<main>
+<!-- ============================ CONNECT ============================ -->
+<section id="tab-connect" class="on">
+  <div class="panel" id="noSerial" hidden>
+    <div class="warnbox">This browser can't talk to USB serial devices. Open this page in
+      <b>Google Chrome</b> or <b>Microsoft Edge</b> on a computer.</div>
+  </div>
+  <div class="panel">
+    <h2>Connect</h2>
+    <p class="muted">Plug in the receiver (or the ring with a USB cable), then click Connect and
+      pick <b>Pointer Receiver</b> or <b>Pointer Ring (wired)</b> from the list.</p>
+    <div class="row">
+      <button class="btn" id="btnConnect">Connect</button>
+      <button class="btn secondary" id="btnDisconnect" disabled>Disconnect</button>
+      <span id="devInfo" class="muted"></span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Live status</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Ring</div><div class="v" id="sRing">–</div></div>
+      <div class="stat"><div class="k">State</div><div class="v" id="sState">–</div></div>
+      <div class="stat"><div class="k">Radio packets / s</div><div class="v" id="sRate">–</div></div>
+      <div class="stat"><div class="k">Packets lost</div><div class="v" id="sLost">–</div></div>
+      <div class="stat"><div class="k">Signal</div><div class="v" id="sRssi">–</div></div>
+      <div class="stat"><div class="k">Hand speed</div><div class="v" id="sSpeed">–</div></div>
+      <div class="stat"><div class="k">Drift correction</div><div class="v" id="sBias">–</div></div>
+      <div class="stat"><div class="k">Hand tremor</div><div class="v" id="sVib">–</div></div>
+    </div>
+    <p class="muted" id="statusHint" style="margin-bottom:0"></p>
+  </div>
+</section>
+
+<!-- ============================ CALIBRATE ============================ -->
+<section id="tab-calibrate">
+  <div class="panel">
+    <h2>Calibrate</h2>
+    <p class="muted">Do this once for each position you strap the ring to (wrist, back of hand, finger…).
+      It teaches the system which way is "right" and "up" for that position. Takes about 30 seconds.</p>
+    <div class="steps">
+      <div class="step" id="cal1">
+        <h3>Step 1: Put the ring down and don't touch it</h3>
+        <p class="muted">Lay it on the table. This measures the sensor's tiny built-in drift.</p>
+        <button class="btn" id="calRest">Start step 1</button> <span id="calRestMsg"></span>
+      </div>
+      <div class="step" id="cal2">
+        <h3>Step 2: Wear it and hold your normal pointing pose</h3>
+        <p class="muted">Strap it on, point at the screen as you would to use it, and hold still.</p>
+        <button class="btn" id="calPose">Start step 2</button> <span id="calPoseMsg"></span>
+      </div>
+      <div class="step" id="cal3">
+        <h3>Step 3: Turn your hand to the right</h3>
+        <p class="muted">Click, then smoothly turn your hand right by about a quarter turn and stop. You have 3 seconds.</p>
+        <button class="btn" id="calRight">Start step 3</button> <span id="calRightMsg"></span>
+      </div>
+      <div class="step" id="cal4">
+        <h3>Step 4: Tip your hand up</h3>
+        <p class="muted">Click, then tip your hand up (point higher) by about a quarter turn and stop.</p>
+        <button class="btn" id="calUp">Start step 4</button> <span id="calUpMsg"></span>
+      </div>
+      <div class="step" id="cal5">
+        <h3>Step 5: Save</h3>
+        <p class="muted">Try moving the cursor. If right is right and up is up, save it to the device.</p>
+        <button class="btn" id="calSave">Save to device</button> <span id="calSaveMsg"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TUNE ============================ -->
+<section id="tab-tune">
+  <div class="panel">
+    <h2>Presets</h2>
+    <div class="row">
+      <button class="btn secondary" data-preset="raw">Lowest lag (no smoothing)</button>
+      <button class="btn secondary" data-preset="balanced">Balanced (default)</button>
+      <button class="btn secondary" data-preset="steady">Extra steady</button>
+    </div>
+    <p class="muted" id="lagEstimate"></p>
+  </div>
+  <div class="panel">
+    <h2>Settings</h2>
+    <p class="muted">Changes apply instantly. Click <b>Save to device</b> to keep them after unplugging.</p>
+    <div id="sliders"></div>
+    <div class="slider"><label>Keep motion level when hand is rolled</label>
+      <input type="checkbox" id="tilt"><span></span></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="btnSave">Save to device</button>
+      <button class="btn secondary" id="btnLoad">Reload from device</button>
+      <button class="btn secondary" id="btnDefaults">Factory defaults</button>
+      <button class="btn secondary" id="btnRezero">Re-learn drift</button>
+      <span id="tuneMsg" class="muted"></span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Check your computer's mouse acceleration</h2>
+    <p class="muted">Your computer can add its own "mouse acceleration" on top of ours, which changes how
+      far the cursor goes depending on speed. Turn it off for fair tests: on Windows, untick
+      <i>Enhance pointer precision</i> (Settings → Mouse → Additional mouse settings → Pointer Options).
+      This check tells you whether it's on.</p>
+    <div class="row">
+      <button class="btn secondary" id="btnAccelCheck">Start 10-second check</button>
+      <span id="accelMsg"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TESTS ============================ -->
+<section id="tab-tests">
+  <div class="panel">
+    <div class="row">
+      <button class="btn secondary" data-test="lag">A. Lag (slow-motion video)</button>
+      <button class="btn secondary" data-test="steady">B. Steadiness</button>
+      <button class="btn secondary" data-test="fitts">C. Pointing accuracy</button>
+      <button class="btn secondary" data-test="daw">D. Timeline &amp; knobs</button>
+    </div>
+    <p class="muted" style="margin-bottom:0">Pick what you're testing in the <b>Testing</b> menu at the top first.
+      Every result is saved under that name.</p>
+  </div>
+
+  <div class="panel test" id="test-lag" hidden>
+    <h2>A. Lag test</h2>
+    <p>Film your hand <i>and</i> this black box together with your phone's <b>slow-motion</b> (240 fps) camera.
+      Hold still for a moment, then flick your hand. The box flashes white the instant the cursor starts
+      moving. In the video, count frames from "hand starts moving" to "box turns white". Each frame is
+      about 4.2 ms. Do 5 flicks, then type your frame counts below.</p>
+    <div id="flash">Move the cursor into this box, hold still, then flick.<br>Flashes: <span id="flashCount">0</span></div>
+    <div class="row" style="margin-top:12px">
+      <label>Frame counts (comma separated): <input type="text" id="frames" size="24" placeholder="e.g. 5, 6, 5, 4, 6"></label>
+      <label>Camera fps: <input type="number" id="fps" value="240" style="width:80px"></label>
+      <button class="btn" id="btnLagSave">Save result</button>
+      <span id="lagMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel test" id="test-steady" hidden>
+    <h2>B. Steadiness test</h2>
+    <p>Point at the cross, click Start, and hold as still as you comfortably can for 10 seconds.</p>
+    <div class="arena" id="steadyArena" style="height:360px">
+      <canvas id="steadyCanvas" height="360"></canvas>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="btnSteady">Start (3 s countdown)</button><span id="steadyMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel test" id="test-fitts" hidden>
+    <h2>C. Pointing accuracy (standard target test)</h2>
+    <p>Move to the highlighted circle and press <kbd>Space</kbd> (or click) as fast and accurately as you can.
+      It jumps across the ring of circles. 4 rounds of 13. With the ring, press Space with your other hand.</p>
+    <div class="arena" id="fittsArena" style="height:620px"><canvas id="fittsCanvas" height="620"></canvas></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="btnFitts">Start</button><span id="fittsMsg"></span>
+    </div>
+  </div>
+
+  <div class="panel test" id="test-daw" hidden>
+    <h2>D. Timeline &amp; knobs</h2>
+    <p>Like editing in a DAW: land on the highlighted beat in the timeline or the highlighted small knob,
+      then press <kbd>Space</kbd>. 24 targets.</p>
+    <div class="arena" id="dawArena" style="height:300px"><canvas id="dawCanvas" height="300"></canvas></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="btnDaw">Start</button><span id="dawMsg"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ RESULTS ============================ -->
+<section id="tab-results">
+  <div class="panel">
+    <h2>Results</h2>
+    <p class="muted">Saved in this browser. Lower lag, lower jitter and higher throughput are better.</p>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn secondary" id="btnCsv">Download CSV</button>
+      <button class="btn secondary" id="btnClear">Clear all</button>
+    </div>
+    <div id="resultsTable"></div>
+  </div>
+</section>
+
+<!-- ============================ CONSOLE ============================ -->
+<section id="tab-console">
+  <div class="panel">
+    <h2>Console</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" id="cmd" size="40" placeholder="command, e.g. get   or   set,gain,30">
+      <button class="btn secondary" id="btnSend">Send</button>
+      <label><input type="checkbox" id="showT"> show telemetry lines</label>
+    </div>
+    <div id="log"></div>
+  </div>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* ------------------------------------------------------------------ */
+/* Storage helpers (localStorage may be unavailable)                   */
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
+  catch { return fallback; }
+}
+function store(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabs                                                                */
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main section").forEach((s) =>
+    s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "results") renderResults();
+}));
+
+const setupSel = $("setup");
+setupSel.value = load("setup", setupSel.value);
+setupSel.addEventListener("change", () => store("setup", setupSel.value));
+
+/* ------------------------------------------------------------------ */
+/* Serial connection                                                   */
+let port = null, writer = null, reader = null, readDone = null, closing = false;
+const enc = new TextEncoder();
+let role = "";
+
+if (!("serial" in navigator)) $("noSerial").hidden = false;
+
+function log(line, cls) {
+  const el = $("log");
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  const d = document.createElement("div");
+  d.textContent = line;
+  if (cls) d.style.color = cls;
+  el.appendChild(d);
+  while (el.childNodes.length > 800) el.removeChild(el.firstChild);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+async function send(cmd) {
+  if (!writer) return false;
+  log("> " + cmd, "var(--accent)");
+  try { await writer.write(enc.encode(cmd + "\n")); return true; }
+  catch (e) { log("send failed: " + e, "var(--bad)"); return false; }
+}
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x1209 }] });
+    await port.open({ baudRate: 115200 });
+    // The device only talks while a program holds the port open (DTR).
+    await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+    writer = port.writable.getWriter();
+    setConnected(true);
+    readDone = readLoop();
+    await send("ver");
+    await send("get");
+    await send("rings");
+  } catch (e) {
+    log("connect failed: " + e, "var(--bad)");
+    await disconnect();
+  }
+}
+
+async function disconnect() {
+  if (closing) return;
+  closing = true;
+  try { if (reader) await reader.cancel(); } catch { /* ignore */ }
+  try { if (readDone) await readDone; } catch { /* ignore */ }
+  try { if (writer) writer.releaseLock(); } catch { /* ignore */ }
+  try { if (port) await port.close(); } catch { /* ignore */ }
+  port = writer = reader = readDone = null;
+  closing = false;
+  setConnected(false);
+}
+
+function setConnected(on) {
+  $("btnConnect").disabled = on;
+  $("btnDisconnect").disabled = !on;
+  $("connPill").textContent = on ? "Connected" : "Not connected";
+  $("connPill").className = "pill " + (on ? "good" : "bad");
+  if (!on) $("devInfo").textContent = "";
+}
+
+async function readLoop() {
+  const dec = new TextDecoder();
+  let buf = "";
+  reader = port.readable.getReader();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (line) onLine(line);
+      }
+      if (buf.length > 4096) buf = ""; // garbage without newlines
+    }
+  } catch (e) {
+    log("read stopped: " + e, "var(--bad)");
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+    reader = null;
+    // Unplugged or failed: tidy up (disconnect() ignores the call if it started this).
+    if (port && !closing) setTimeout(disconnect, 0);
+  }
+}
+
+$("btnConnect").addEventListener("click", connect);
+$("btnDisconnect").addEventListener("click", disconnect);
+if ("serial" in navigator) {
+  navigator.serial.addEventListener("disconnect", (e) => { if (e.target === port) disconnect(); });
+}
+
+/* ------------------------------------------------------------------ */
+/* Incoming lines                                                      */
+const cfg = {};            // settings as reported by the device
+const tele = [];           // recent telemetry (last ~3 s)
+const teleListeners = new Set();
+
+function onLine(line) {
+  const f = line.split(",");
+  if (f[0] === "T") {
+    if ($("showT").checked) log(line);
+    const t = parseTelemetry(f);
+    if (!t) return;
+    tele.push(t);
+    while (tele.length > 150) tele.shift();
+    teleListeners.forEach((fn) => fn(t));
+    return;
+  }
+  log(line, f[0] === "ERR" ? "var(--bad)" : undefined);
+  if (f[0] === "C") {
+    cfg[f[1]] = f.slice(2).map(Number);
+    syncSliders();
+  } else if (f[0] === "I" && f[1] === "ver") {
+    role = f[2];
+    $("devInfo").textContent = (role === "receiver" ? "Receiver" : "Ring (wired)") + ", firmware v" + f[3];
+  } else if (f[0] === "I" && f[1] === "ring") {
+    // ring list: nothing to do beyond the log
+  }
+}
+
+function parseTelemetry(f) {
+  if (f.length < 29) return null;
+  const n = f.map(Number);
+  return {
+    at: performance.now(),
+    ms: n[1], id: f[2], mode: f[3], updates: n[4], samples: n[5],
+    ang: [n[6] / 1000, n[7] / 1000, n[8] / 1000],     // degrees
+    dx: n[9], dy: n[10], speed: n[11] / 10, still: n[12] === 1,
+    bias: [n[13] / 1000, n[14] / 1000, n[15] / 1000],  // deg/s
+    up: [n[16] / 1000, n[17] / 1000, n[18] / 1000],
+    acc: [n[19] / 1000, n[20] / 1000, n[21] / 1000],  // g
+    vibG: n[22] / 1000, vibA: n[23] / 10,              // deg/s, milli-g
+    rx: n[24], lost: n[25], rssi: n[26], txf: n[27], flags: n[28],
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Live status                                                         */
+setInterval(() => {
+  const now = performance.now();
+  const recent = tele.filter((t) => now - t.at < 1000);
+  if (!recent.length) {
+    ["sRing", "sState", "sRate", "sLost", "sRssi", "sSpeed", "sBias", "sVib"].forEach((id) => $(id).textContent = "–");
+    $("statusHint").textContent = port ? "Waiting for data…" : "";
+    return;
+  }
+  const last = recent[recent.length - 1];
+  const rx = recent.reduce((a, t) => a + t.rx, 0);
+  const lost = recent.reduce((a, t) => a + t.lost, 0);
+  $("sRing").textContent = last.id === "00000000" ? "none" : last.id;
+  const idle = last.flags & 1, imuErr = last.flags & 2;
+  $("sState").textContent = imuErr ? "sensor error" : last.mode === "W" ? "wired" : idle ? "resting" : "active";
+  $("sRate").textContent = last.mode === "W" ? "(wired)" : rx;
+  $("sLost").textContent = last.mode === "W" ? "–" : (rx + lost ? (100 * lost / (rx + lost)).toFixed(1) + " %" : "–");
+  $("sRssi").textContent = last.mode === "W" || !last.rssi ? "–" : last.rssi + " dBm";
+  $("sSpeed").textContent = Math.max(...recent.map((t) => t.speed)).toFixed(0) + " °/s";
+  const b = Math.hypot(...last.bias);
+  $("sBias").textContent = b.toFixed(2) + " °/s";
+  $("sVib").textContent = last.vibG.toFixed(2) + " °/s";
+  let hint = "";
+  if (last.mode === "R" && last.id === "00000000") hint = "No ring heard yet. Is the ring's battery connected and charged? Move it to wake it.";
+  else if (last.mode === "R" && idle) hint = "The ring is resting to save battery. Move it to wake it up.";
+  else if (imuErr) hint = "The ring can't read its motion sensor. Unplug the battery for a few seconds and reconnect.";
+  $("statusHint").textContent = hint;
+}, 250);
+
+/* ------------------------------------------------------------------ */
+/* Vector helpers                                                      */
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = (a) => Math.hypot(a[0], a[1], a[2]);
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const norm = (a) => scale(a, 1 / len(a));
+const fmtVec = (a) => a.map((x) => x.toFixed(4)).join(",");
+
+/* Collect telemetry for `ms` milliseconds. */
+function collect(ms) {
+  return new Promise((resolve) => {
+    const got = [];
+    const fn = (t) => got.push(t);
+    teleListeners.add(fn);
+    setTimeout(() => { teleListeners.delete(fn); resolve(got); }, ms);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Calibration                                                         */
+const cal = {};
+function calStep(n, state) {
+  const el = $("cal" + n);
+  el.classList.toggle("active", state === "active");
+  el.classList.toggle("done", state === "done");
+}
+function needConn(msgEl) {
+  if (!port) { msgEl.textContent = "Connect first (tab 1)."; return false; }
+  return true;
+}
+
+$("calRest").addEventListener("click", async () => {
+  const m = $("calRestMsg");
+  if (!needConn(m)) return;
+  calStep(1, "active");
+  await send("cursor,0");
+  await send("rezero");
+  m.textContent = "Measuring… keep it still.";
+  const got = await collect(3500);
+  const late = got.filter((t) => t.at > got[0]?.at + 1500);
+  if (!late.length) { m.textContent = "No data from the ring. Check the Connect tab."; return; }
+  const stillFrac = late.filter((t) => t.still).length / late.length;
+  if (stillFrac < 0.5) {
+    m.textContent = "It moved (or the table shook). Try again.";
+    return;
+  }
+  const b = late[late.length - 1].bias;
+  m.textContent = "Done. Drift measured: " + len(b).toFixed(2) + " °/s.";
+  calStep(1, "done");
+  await send("cursor,1");
+});
+
+$("calPose").addEventListener("click", async () => {
+  const m = $("calPoseMsg");
+  if (!needConn(m)) return;
+  calStep(2, "active");
+  await send("cursor,0");
+  m.textContent = "Hold still…";
+  const got = await collect(1500);
+  if (got.length < 20) { m.textContent = "Not enough data. Is the ring awake?"; return; }
+  const sum = got.reduce((a, t) => [a[0] + t.acc[0], a[1] + t.acc[1], a[2] + t.acc[2]], [0, 0, 0]);
+  const g = len(sum) / got.length;
+  if (g < 0.8 || g > 1.2) { m.textContent = "Too much movement, try again."; return; }
+  cal.up0 = norm(sum);
+  const moved = got.reduce((a, t) => a + len(t.ang), 0);
+  if (moved > 15) { m.textContent = "You moved quite a bit. Hold steadier and try again."; return; }
+  m.textContent = "Got it.";
+  calStep(2, "done");
+});
+
+/* Main rotation axis of a sweep, even if the hand came back afterwards:
+ * the dominant eigenvector of the sum of outer products of the rotation
+ * steps, signed by the direction of the first clear movement.
+ */
+function sweepAxis(steps) {
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const a of steps) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i][j] += a[i] * a[j];
+  let v = [1, 0.5, 0.25];
+  for (let k = 0; k < 60; k++) {
+    const w = [dot(M[0], v), dot(M[1], v), dot(M[2], v)];
+    const l = len(w);
+    if (!(l > 0)) return null;
+    v = scale(w, 1 / l);
+  }
+  // sign: sum the steps until 10 degrees have been covered
+  let first = [0, 0, 0];
+  for (const a of steps) {
+    first = [first[0] + a[0], first[1] + a[1], first[2] + a[2]];
+    if (len(first) > 10) break;
+  }
+  return dot(first, v) < 0 ? scale(v, -1) : v;
+}
+
+async function sweep(n, msgEl) {
+  if (!needConn(msgEl)) return null;
+  if (!cal.up0) { msgEl.textContent = "Do step 2 first."; return null; }
+  calStep(n, "active");
+  await send("cursor,0");
+  msgEl.textContent = "Go!";
+  const got = await collect(3000);
+  const steps = got.map((t) => t.ang);
+  const total = steps.reduce((a, s) => a + len(s), 0);
+  if (total < 20) {
+    msgEl.textContent = "Only " + total.toFixed(0) + "° of turning. Turn further (about 90°) and try again.";
+    return null;
+  }
+  const axis = sweepAxis(steps);
+  if (!axis) { msgEl.textContent = "Couldn't read that. Try again."; return null; }
+  msgEl.textContent = "Measured " + total.toFixed(0) + "° of turning.";
+  calStep(n, "done");
+  return axis;
+}
+
+$("calRight").addEventListener("click", async () => {
+  const v = await sweep(3, $("calRightMsg"));
+  if (v) cal.right = v;
+});
+
+$("calUp").addEventListener("click", async () => {
+  const m = $("calUpMsg");
+  const v = await sweep(4, m);
+  if (!v) return;
+  if (!cal.right) { m.textContent = "Do step 3 first."; return; }
+  const up = v;
+  const up0 = cal.up0;
+  // "up" rotation axis must be horizontal: remove any part along gravity.
+  let upH = sub(up, scale(up0, dot(up, up0)));
+  if (len(upH) < 0.3) { m.textContent = "That looked like turning sideways, not tipping up. Try again."; return; }
+  upH = norm(upH);
+  let right = sub(cal.right, scale(upH, dot(cal.right, upH)));
+  if (len(right) < 0.3) { m.textContent = "Steps 3 and 4 looked the same. Redo step 3."; return; }
+  right = norm(right);
+  const fwd = norm(cross(up0, upH));
+  // Turning right should be a rotation about "down" (= -up0).
+  const level = -dot(right, up0);
+  await send("set,right," + fmtVec(right));
+  await send("set,up," + fmtVec(upH));
+  await send("set,fwd," + fmtVec(fwd));
+  await send("cursor,1");
+  m.textContent = level < 0.7
+    ? "Saved to the ring for now. Your right-turn was a bit tilted; that's OK, but redo step 3 if the cursor moves diagonally."
+    : "Done. Move the cursor around to try it.";
+});
+
+$("calSave").addEventListener("click", async () => {
+  const m = $("calSaveMsg");
+  if (!needConn(m)) return;
+  await send("cursor,1");
+  await send("save");
+  m.textContent = "Saved.";
+  calStep(5, "done");
+});
+
+/* ------------------------------------------------------------------ */
+/* Tuning                                                              */
+const sliderDefs = [
+  { key: "gain", label: "Speed (pixels per degree)", min: 5, max: 80, step: 1, def: 25 },
+  { key: "accel", label: "Extra speed for fast moves", min: 0, max: 6, step: 0.1, def: 2 },
+  { key: "knee", label: "…kicks in around (°/s)", min: 10, max: 300, step: 5, def: 80 },
+  { key: "mincutoff", label: "Steadiness when still (Hz, lower = steadier)", min: 0.1, max: 10, step: 0.1, def: 1 },
+  { key: "beta", label: "Smoothing turns off with speed", min: 0, max: 5, step: 0.05, def: 1 },
+  { key: "deadzone", label: "Ignore rotation below (°/s)", min: 0, max: 2, step: 0.05, def: 0.15 },
+  { key: "predict", label: "Look-ahead (ms, 0 = off)", min: 0, max: 20, step: 1, def: 0 },
+];
+const sliders = {};
+for (const d of sliderDefs) {
+  const row = document.createElement("div");
+  row.className = "slider";
+  row.innerHTML = `<label>${d.label}</label><input type="range" min="${d.min}" max="${d.max}" step="${d.step}"><span class="val">–</span>`;
+  const input = row.querySelector("input"), val = row.querySelector(".val");
+  input.value = d.def;
+  val.textContent = d.def;
+  let timer = null;
+  input.addEventListener("input", () => {
+    val.textContent = input.value;
+    clearTimeout(timer);
+    timer = setTimeout(() => send(`set,${d.key},${input.value}`), 120);
+    updateLagEstimate();
+  });
+  sliders[d.key] = { input, val };
+  $("sliders").appendChild(row);
+}
+$("tilt").addEventListener("change", () => send("set,tilt," + ($("tilt").checked ? 1 : 0)));
+
+function syncSliders() {
+  for (const d of sliderDefs) {
+    if (cfg[d.key] && document.activeElement !== sliders[d.key].input) {
+      sliders[d.key].input.value = cfg[d.key][0];
+      sliders[d.key].val.textContent = +cfg[d.key][0].toFixed(3);
+    }
+  }
+  if (cfg.tilt) $("tilt").checked = cfg.tilt[0] === 1;
+  updateLagEstimate();
+}
+
+/* The device's value, unless the user is dragging that slider right now
+ * (presets can set values beyond the slider range).
+ */
+function effective(key) {
+  const inp = sliders[key].input;
+  if (document.activeElement === inp || !cfg[key]) return +inp.value;
+  return cfg[key][0];
+}
+
+function updateLagEstimate() {
+  const m = effective("mincutoff"), b = effective("beta");
+  const lag = (v) => 1000 / (2 * Math.PI * (m + b * v));
+  const f = (v) => { const l = lag(v); return l < 0.5 ? "<0.5" : l.toFixed(l < 10 ? 1 : 0); };
+  $("lagEstimate").textContent =
+    `Smoothing lag with these settings: ${f(20)} ms at slow moves (20 °/s), ${f(50)} ms at medium (50 °/s), ` +
+    `${f(200)} ms at fast flicks (200 °/s). Radio and USB add about 1–2 ms on top.`;
+}
+
+const presets = {
+  raw: { mincutoff: 1000, beta: 0, deadzone: 0 },
+  balanced: { mincutoff: 1.0, beta: 1.0, deadzone: 0.15 },
+  steady: { mincutoff: 0.5, beta: 0.5, deadzone: 0.3 },
+};
+document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", async () => {
+  const p = presets[b.dataset.preset];
+  for (const k in p) await send(`set,${k},${p[k]}`);
+}));
+$("btnSave").addEventListener("click", async () => { await send("save"); $("tuneMsg").textContent = "Saved."; });
+$("btnLoad").addEventListener("click", () => send("get"));
+$("btnDefaults").addEventListener("click", async () => { await send("defaults"); await send("get"); });
+$("btnRezero").addEventListener("click", async () => {
+  await send("rezero");
+  $("tuneMsg").textContent = "Put the ring down still for 2 seconds.";
+});
+
+/* OS acceleration check: compare device counts with actual cursor motion. */
+$("btnAccelCheck").addEventListener("click", async () => {
+  const m = $("accelMsg");
+  if (!needConn(m)) return;
+  m.textContent = "Move the cursor around: some slow, some fast… (10 s)";
+  const buckets = new Map(); // 100 ms slot -> {dev, scr}
+  const slot = (t) => Math.floor(t / 100);
+  const onMove = (e) => {
+    const b = buckets.get(slot(e.timeStamp)) || { dev: 0, scr: 0 };
+    b.scr += Math.hypot(e.movementX, e.movementY);
+    buckets.set(slot(e.timeStamp), b);
+  };
+  const onTele = (t) => {
+    const b = buckets.get(slot(t.at)) || { dev: 0, scr: 0 };
+    b.dev += Math.hypot(t.dx, t.dy);
+    buckets.set(slot(t.at), b);
+  };
+  window.addEventListener("pointermove", onMove);
+  teleListeners.add(onTele);
+  await new Promise((r) => setTimeout(r, 10000));
+  window.removeEventListener("pointermove", onMove);
+  teleListeners.delete(onTele);
+  const slow = [], fast = [];
+  for (const b of buckets.values()) {
+    if (b.dev < 3 || b.scr < 1) continue;
+    const speed = b.dev * 10; // counts per second
+    (speed < 600 ? slow : speed > 4000 ? fast : []).push(b.scr / b.dev);
+  }
+  const med = (a) => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  if (slow.length < 3 || fast.length < 3) {
+    m.textContent = "Need both slow and fast movements. Try again.";
+    return;
+  }
+  const ratio = med(fast) / med(slow);
+  m.textContent = ratio > 1.3
+    ? `Acceleration looks ON (fast moves go ${ratio.toFixed(1)}× further). Turn it off for fair tests.`
+    : `Acceleration looks OFF (ratio ${ratio.toFixed(2)}). Good.`;
+});
+
+/* ------------------------------------------------------------------ */
+/* Results                                                             */
+function saveResult(test, metrics) {
+  const all = load("results", []);
+  all.push({ when: new Date().toISOString(), setup: setupSel.value, test, ...metrics });
+  store("results", all);
+}
+
+function renderResults() {
+  const all = load("results", []);
+  if (!all.length) { $("resultsTable").innerHTML = '<p class="muted">No results yet.</p>'; return; }
+  const cols = ["when", "setup", "test", "summary"];
+  let h = "<table><tr>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
+  for (const r of all.slice().reverse()) {
+    h += `<tr><td>${new Date(r.when).toLocaleString()}</td><td>${esc(r.setup)}</td><td>${esc(r.test)}</td><td>${esc(r.summary)}</td></tr>`;
+  }
+  $("resultsTable").innerHTML = h + "</table>";
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+$("btnCsv").addEventListener("click", () => {
+  const all = load("results", []);
+  const keys = [...new Set(all.flatMap((r) => Object.keys(r)))];
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [keys.join(",")].concat(all.map((r) => keys.map((k) => q(r[k])).join(","))).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "pointer-results.csv";
+  a.click();
+});
+$("btnClear").addEventListener("click", () => {
+  if (confirm("Delete all saved results?")) { store("results", []); renderResults(); }
+});
+
+/* ------------------------------------------------------------------ */
+/* Pointer input for tests: lowest-latency event the browser offers.   */
+const rawEvent = "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
+
+document.querySelectorAll("[data-test]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".test").forEach((t) => t.hidden = t.id !== "test-" + b.dataset.test);
+  if (b.dataset.test === "steady") drawSteady();
+  if (b.dataset.test === "fitts") drawFitts();
+  if (b.dataset.test === "daw") drawDaw();
+}));
+
+function fitCanvas(c) {
+  const r = c.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(r.width * dpr);
+  c.height = Math.round(c.clientHeight * dpr);
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: r.width, h: c.clientHeight };
+}
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+/* ---- A. Lag flash ---- */
+{
+  // Armed once the cursor has stayed within 2 px for 400 ms; fires on the
+  // first event more than 4 px from that resting point, so tiny wobble
+  // never triggers it and a flick triggers it within about a millisecond.
+  const box = $("flash");
+  let rest = null, restSince = 0, count = 0, flashing = false;
+  box.addEventListener(rawEvent, (e) => {
+    const p = [e.clientX, e.clientY], now = e.timeStamp;
+    if (!rest || Math.hypot(p[0] - rest[0], p[1] - rest[1]) > 2) {
+      const armed = rest && now - restSince > 400;
+      if (armed && !flashing && Math.hypot(p[0] - rest[0], p[1] - rest[1]) > 4) {
+        flashing = true;
+        box.style.background = "#fff";
+        $("flashCount").textContent = ++count;
+        setTimeout(() => { box.style.background = "#000"; flashing = false; }, 150);
+      }
+      rest = p;
+      restSince = now;
+    }
+  });
+  $("btnLagSave").addEventListener("click", () => {
+    const frames = $("frames").value.split(/[,\s]+/).map(Number).filter((x) => x > 0);
+    const fps = +$("fps").value || 240;
+    if (frames.length < 3) { $("lagMsg").textContent = "Enter at least 3 frame counts."; return; }
+    const ms = frames.map((f) => f * 1000 / fps).sort((a, b) => a - b);
+    const avg = ms.reduce((a, b) => a + b, 0) / ms.length;
+    const median = ms[Math.floor(ms.length / 2)];
+    const summary = `lag avg ${avg.toFixed(1)} ms, median ${median.toFixed(1)} ms (${frames.length} flicks at ${fps} fps)`;
+    saveResult("Lag", { lag_avg_ms: avg.toFixed(1), lag_median_ms: median.toFixed(1), flicks: frames.length, summary });
+    $("lagMsg").textContent = "Saved: " + summary;
+  });
+}
+
+/* ---- B. Steadiness ---- */
+function drawSteady(points) {
+  const c = $("steadyCanvas");
+  const { ctx, w, h } = fitCanvas(c);
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = css("--muted");
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 14, h / 2); ctx.lineTo(w / 2 + 14, h / 2);
+  ctx.moveTo(w / 2, h / 2 - 14); ctx.lineTo(w / 2, h / 2 + 14);
+  ctx.stroke();
+  if (points && points.length) {
+    ctx.fillStyle = css("--accent");
+    for (const p of points) ctx.fillRect(p[0] - 1, p[1] - 1, 2, 2);
+  }
+}
+$("btnSteady").addEventListener("click", async () => {
+  const m = $("steadyMsg");
+  const arena = $("steadyArena");
+  for (let i = 3; i > 0; i--) { m.textContent = `Point at the cross… ${i}`; await new Promise((r) => setTimeout(r, 1000)); }
+  m.textContent = "Hold still… (10 s)";
+  const pts = [];
+  let devX = 0, devY = 0;
+  const devPts = [];
+  const onMove = (e) => {
+    const r = arena.getBoundingClientRect();
+    pts.push([e.clientX - r.left, e.clientY - r.top]);
+  };
+  const onTele = (t) => { devX += t.dx; devY += t.dy; devPts.push([devX, devY]); };
+  window.addEventListener(rawEvent, onMove);
+  teleListeners.add(onTele);
+  await new Promise((r) => setTimeout(r, 10000));
+  window.removeEventListener(rawEvent, onMove);
+  teleListeners.delete(onTele);
+  drawSteady(pts);
+  const rms = (a) => {
+    if (a.length < 2) return 0;
+    const mx = a.reduce((s, p) => s + p[0], 0) / a.length, my = a.reduce((s, p) => s + p[1], 0) / a.length;
+    return Math.sqrt(a.reduce((s, p) => s + (p[0] - mx) ** 2 + (p[1] - my) ** 2, 0) / a.length);
+  };
+  const scr = rms(pts);
+  const drift = pts.length > 1 ? Math.hypot(pts[pts.length - 1][0] - pts[0][0], pts[pts.length - 1][1] - pts[0][1]) : 0;
+  const summary = `wobble ${scr.toFixed(2)} px RMS, drift ${drift.toFixed(0)} px over 10 s` +
+    (devPts.length ? `, device ${rms(devPts).toFixed(2)} counts RMS` : "");
+  m.textContent = summary + (pts.length < 5 ? " (the cursor barely moved at all)" : "");
+  saveResult("Steadiness", { jitter_px_rms: scr.toFixed(2), drift_px: drift.toFixed(0), summary });
+});
+
+/* ---- C. Pointing accuracy (ISO 9241-411 multidirectional tapping) ---- */
+const fitts = { running: false };
+const FITTS_CONDITIONS = [
+  { D: 300, W: 40 }, { D: 500, W: 40 }, { D: 300, W: 16 }, { D: 500, W: 16 },
+];
+const N_TARGETS = 13;
+
+function fittsTarget(cond, idx, w, h) {
+  const a = (idx / N_TARGETS) * 2 * Math.PI - Math.PI / 2;
+  return [w / 2 + (cond.D / 2) * Math.cos(a), h / 2 + (cond.D / 2) * Math.sin(a)];
+}
+function drawFitts() {
+  const c = $("fittsCanvas");
+  const { ctx, w, h } = fitCanvas(c);
+  ctx.clearRect(0, 0, w, h);
+  const cond = FITTS_CONDITIONS[fitts.running ? fitts.cond : 0];
+  for (let i = 0; i < N_TARGETS; i++) {
+    const [x, y] = fittsTarget(cond, i, w, h);
+    const isCur = fitts.running && i === fitts.seq[fitts.k];
+    ctx.beginPath();
+    ctx.arc(x, y, cond.W / 2, 0, 2 * Math.PI);
+    ctx.fillStyle = isCur ? css("--target") : "transparent";
+    ctx.strokeStyle = isCur ? css("--target") : css("--muted");
+    ctx.lineWidth = 1.5;
+    if (isCur) ctx.fill();
+    ctx.stroke();
+  }
+  if (!fitts.running) {
+    ctx.fillStyle = css("--muted");
+    ctx.font = "15px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Click Start, then use Space to select", w / 2, h / 2);
+  }
+}
+$("btnFitts").addEventListener("click", () => {
+  document.activeElement?.blur(); // Space must not re-press this button
+  const seq = [];
+  for (let k = 0; k <= N_TARGETS; k++) seq.push((k * 7) % N_TARGETS); // alternate across the circle
+  Object.assign(fitts, { running: true, cond: 0, k: 0, seq, trials: [], lastT: 0, lastPos: null });
+  $("fittsMsg").textContent = "Round 1 of " + FITTS_CONDITIONS.length + ": select the highlighted circle.";
+  drawFitts();
+});
+let lastPointer = [0, 0];
+window.addEventListener(rawEvent, (e) => { lastPointer = [e.clientX, e.clientY]; });
+
+function fittsSelect() {
+  const c = $("fittsCanvas");
+  const r = c.getBoundingClientRect();
+  const pos = [lastPointer[0] - r.left, lastPointer[1] - r.top];
+  const cond = FITTS_CONDITIONS[fitts.cond];
+  const now = performance.now();
+  const tgt = fittsTarget(cond, fitts.seq[fitts.k], r.width, c.clientHeight);
+  if (fitts.k > 0) { // the first selection of a round only starts the clock
+    const from = fittsTarget(cond, fitts.seq[fitts.k - 1], r.width, c.clientHeight);
+    fitts.trials.push({ cond: fitts.cond, mt: now - fitts.lastT, pos, tgt, from, W: cond.W, D: cond.D });
+  }
+  fitts.lastT = now;
+  fitts.k++;
+  if (fitts.k > N_TARGETS) {
+    fitts.cond++;
+    fitts.k = 0;
+    if (fitts.cond >= FITTS_CONDITIONS.length) { finishFitts(); return; }
+    $("fittsMsg").textContent = `Round ${fitts.cond + 1} of ${FITTS_CONDITIONS.length}.`;
+  }
+  drawFitts();
+}
+function finishFitts() {
+  fitts.running = false;
+  drawFitts();
+  const per = [];
+  let errors = 0, total = 0;
+  for (let ci = 0; ci < FITTS_CONDITIONS.length; ci++) {
+    const tr = fitts.trials.filter((t) => t.cond === ci);
+    if (tr.length < 3) continue;
+    const dxs = tr.map((t) => {
+      const axis = norm2(sub2(t.tgt, t.from));
+      return dot2(sub2(t.pos, t.tgt), axis); // overshoot(+)/undershoot(-) along the movement
+    });
+    for (const t of tr) {
+      total++;
+      if (Math.hypot(t.pos[0] - t.tgt[0], t.pos[1] - t.tgt[1]) > t.W / 2) errors++;
+    }
+    const mean = dxs.reduce((a, b) => a + b, 0) / dxs.length;
+    const sd = Math.sqrt(dxs.reduce((a, b) => a + (b - mean) ** 2, 0) / (dxs.length - 1));
+    const We = Math.max(4.133 * sd, 1);
+    const De = tr.reduce((a, t, i) => a + t.D + dxs[i], 0) / tr.length;
+    const IDe = Math.log2(De / We + 1);
+    const mt = tr.reduce((a, t) => a + t.mt, 0) / tr.length / 1000;
+    per.push({ tp: IDe / mt, mt });
+  }
+  const tp = per.reduce((a, p) => a + p.tp, 0) / per.length;
+  const mt = per.reduce((a, p) => a + p.mt, 0) / per.length;
+  const err = 100 * errors / total;
+  const summary = `throughput ${tp.toFixed(2)} bits/s, avg time ${(mt * 1000).toFixed(0)} ms, misses ${err.toFixed(0)} %`;
+  $("fittsMsg").textContent = "Done: " + summary;
+  saveResult("Pointing", { throughput_bps: tp.toFixed(2), move_time_ms: (mt * 1000).toFixed(0), miss_pct: err.toFixed(1), summary });
+}
+const sub2 = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const dot2 = (a, b) => a[0] * b[0] + a[1] * b[1];
+const norm2 = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
+
+/* ---- D. Timeline & knobs ---- */
+const daw = { running: false };
+const BEATS = 32, BEAT_W = 24, KNOBS = 12, KNOB_R = 10, DAW_TRIALS = 24;
+function dawLayout(w) {
+  const tlX = (w - BEATS * BEAT_W) / 2, tlY = 60;
+  const knobs = [];
+  for (let i = 0; i < KNOBS; i++) knobs.push([w / 2 + (i - (KNOBS - 1) / 2) * 56, 210]);
+  return { tlX, tlY, knobs };
+}
+function drawDaw() {
+  const c = $("dawCanvas");
+  const { ctx, w, h } = fitCanvas(c);
+  ctx.clearRect(0, 0, w, h);
+  const L = dawLayout(w);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < BEATS; i++) {
+    const x = L.tlX + i * BEAT_W;
+    const isT = daw.running && daw.target.kind === "beat" && daw.target.i === i;
+    ctx.fillStyle = isT ? css("--target") : (i % 4 === 0 ? css("--line") : "transparent");
+    ctx.fillRect(x, L.tlY, BEAT_W, 60);
+    ctx.strokeStyle = css("--muted");
+    ctx.strokeRect(x + 0.5, L.tlY + 0.5, BEAT_W, 60);
+  }
+  L.knobs.forEach(([x, y], i) => {
+    const isT = daw.running && daw.target.kind === "knob" && daw.target.i === i;
+    ctx.beginPath();
+    ctx.arc(x, y, KNOB_R, 0, 2 * Math.PI);
+    ctx.fillStyle = isT ? css("--target") : "transparent";
+    ctx.strokeStyle = isT ? css("--target") : css("--muted");
+    if (isT) ctx.fill();
+    ctx.stroke();
+  });
+  if (!daw.running) {
+    ctx.fillStyle = css("--muted");
+    ctx.font = "15px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Click Start, then use Space to select", w / 2, h - 20);
+  }
+}
+function dawNext() {
+  const prev = daw.target;
+  let t;
+  do {
+    t = Math.random() < 0.5 ? { kind: "beat", i: Math.floor(Math.random() * BEATS) }
+                            : { kind: "knob", i: Math.floor(Math.random() * KNOBS) };
+  } while (prev && prev.kind === t.kind && Math.abs(prev.i - t.i) < 3);
+  daw.target = t;
+  daw.shownAt = performance.now();
+}
+$("btnDaw").addEventListener("click", () => {
+  document.activeElement?.blur();
+  Object.assign(daw, { running: true, n: 0, hits: 0, times: [], target: null });
+  dawNext();
+  $("dawMsg").textContent = `Target 1 of ${DAW_TRIALS}`;
+  drawDaw();
+});
+function dawSelect() {
+  const c = $("dawCanvas");
+  const r = c.getBoundingClientRect();
+  const [px, py] = [lastPointer[0] - r.left, lastPointer[1] - r.top];
+  const L = dawLayout(r.width);
+  let hit;
+  if (daw.target.kind === "beat") {
+    const x = L.tlX + daw.target.i * BEAT_W;
+    hit = px >= x && px < x + BEAT_W && py >= L.tlY && py < L.tlY + 60;
+  } else {
+    const [kx, ky] = L.knobs[daw.target.i];
+    hit = Math.hypot(px - kx, py - ky) <= KNOB_R;
+  }
+  daw.times.push(performance.now() - daw.shownAt);
+  if (hit) daw.hits++;
+  daw.n++;
+  if (daw.n >= DAW_TRIALS) {
+    daw.running = false;
+    drawDaw();
+    const t = daw.times.slice().sort((a, b) => a - b);
+    const median = t[Math.floor(t.length / 2)];
+    const summary = `median ${median.toFixed(0)} ms per target, ${daw.hits}/${DAW_TRIALS} hit`;
+    $("dawMsg").textContent = "Done: " + summary;
+    saveResult("Timeline & knobs", { median_ms: median.toFixed(0), hits: daw.hits, trials: DAW_TRIALS, summary });
+    return;
+  }
+  dawNext();
+  $("dawMsg").textContent = `Target ${daw.n + 1} of ${DAW_TRIALS}` + (hit ? "" : " (missed that one)");
+  drawDaw();
+}
+
+/* Space (or a click inside the test area) selects. */
+window.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || e.repeat) return;
+  if (fitts.running || daw.running) {
+    e.preventDefault();
+    if (fitts.running) fittsSelect(); else dawSelect();
+  }
+});
+$("fittsArena").addEventListener("pointerdown", (e) => {
+  if (!fitts.running) return;
+  lastPointer = [e.clientX, e.clientY];
+  fittsSelect();
+});
+$("dawArena").addEventListener("pointerdown", (e) => {
+  if (!daw.running) return;
+  lastPointer = [e.clientX, e.clientY];
+  dawSelect();
+});
+window.addEventListener("resize", () => { drawFitts(); drawDaw(); drawSteady(); });
+
+/* ------------------------------------------------------------------ */
+/* Console                                                             */
+$("btnSend").addEventListener("click", () => { const v = $("cmd").value.trim(); if (v) send(v); $("cmd").value = ""; });
+$("cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnSend").click(); });
+
+updateLagEstimate();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Single image, no Nordic partition manager. The dongle board linking keeps
+# the factory USB bootloader intact (application starts at 0x1000).
+config PARTITION_MANAGER
+	default n
+
+source "share/sysbuild/Kconfig"

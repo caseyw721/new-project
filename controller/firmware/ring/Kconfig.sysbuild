@@ -1,0 +1,6 @@
+# Single image, flash layout from devicetree (the board's UF2 bootloader
+# layout), no Nordic partition manager.
+config PARTITION_MANAGER
+	default n
+
+source "share/sysbuild/Kconfig"

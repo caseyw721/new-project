@@ -1,0 +1,6 @@
+# host test builds
+controller/firmware/tests/test_runner
+controller/firmware/tests/*.o
+# node
+node_modules/
+package-lock.json

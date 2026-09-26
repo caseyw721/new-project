@@ -25,7 +25,8 @@ Each phase answers one question. We don't buy parts for a phase until the one be
 - **You:** buy the parts below, and solder a few wires (step-by-step guide provided). Wear the
   test rigs and run the test app.
 - **Claude:** writes the software for the boards and the receiver, plus a test app on your
-  computer that measures lag, shake and accuracy.
+  computer that measures lag, shake and accuracy. ✅ **Written.** Parts ordered. Next: follow
+  the [setup guide](02-phase1-setup-guide.md) when they arrive.
 - **Done when:** we find the setup with the **lowest lag**, matching a wired gaming mouse within
   a couple of milliseconds, that is also accurate enough for editing.
 
@@ -117,4 +118,6 @@ lag cut outside the controller (up to ~8 ms). It's not needed for testing and is
 | File | What's in it |
 |---|---|
 | [01-cursor-tracking.md](01-cursor-tracking.md) | Which tracking method we chose and why, plus how Phase 1 testing works |
+| [02-phase1-setup-guide.md](02-phase1-setup-guide.md) | **Step by step:** solder, load the software, calibrate, run the tests |
+| [../../controller/README.md](../../controller/README.md) | For changing the code: how the software is organized |
 | [../fingertip-controller.md](../fingertip-controller.md) | The original big-picture concept (voice + pointing in the DAW). Parked until Phase 5. |

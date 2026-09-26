@@ -1,0 +1,10 @@
+/* USB HID mouse interface (the CDC serial port comes from the board). */
+/ {
+	hid_dev_0: hid_dev_0 {
+		compatible = "zephyr,hid-device";
+		label = "Pointer";
+		protocol-code = "none";
+		in-polling-period-us = <1000>;
+		in-report-size = <6>;
+	};
+};
