@@ -47,7 +47,7 @@ DS.Policy = (() => {
   /* All VIN candidates on a page from every text source, with provenance. */
   function extractVins(features, pageIndex) {
     const out = [];
-    const sources = [['textLayer', features.textLayer], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
+    const sources = [['textLayer', features.textLayer], ['ocrVin', features.ocrVin], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
     for (const [src, s] of sources) {
       if (!s) continue;
       const pageConf = src === 'textLayer' ? s.quality.score : s.meanConf;
@@ -194,14 +194,11 @@ DS.Policy = (() => {
       const strongRead = doc.vinCandidates.some((v) => v.vin === doc.vin && !v.guessed && (v.source === 'textLayer' || v.confidence >= 0.75));
       if (!strongRead) { doc.vinWeak = doc.vin; doc.vin = null; }
     }
-    // 2. Propagate along contiguous runs, conservatively: a doc without a
-    //    readable VIN takes its neighbours' VIN only when both neighbours
-    //    agree. A mis-grouped deal is worse than a document left for review.
-    for (let i = 0; i < docs.length; i++) {
-      if (docs[i].vin) continue;
-      const prev = docs[i - 1]?.vin, next = docs[i + 1]?.vin;
-      if (prev && next && prev === next) { docs[i].vin = prev; docs[i].vinPropagated = 'neighbours'; }
-    }
+    // 2. No VIN is propagated between documents. Pages inside one document
+    //    already share its VIN (step 1); a document whose VIN could not be
+    //    read waits in review with every raw candidate kept. Scans arrive out
+    //    of order, so a neighbour's VIN is a guess, and a mis-grouped deal is
+    //    worse than a document left for review.
     // 3. Group.
     const deals = new Map();
     for (const doc of docs) {

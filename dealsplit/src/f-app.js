@@ -108,7 +108,9 @@ DS.App = (() => {
       } else if (need === 'vinZoom') {
         // 300 dpi on demand: OCR a small box to the right of a "VIN" label.
         const words = [...(features.ocrFull?.words || []), ...(features.ocrHeader?.words || [])];
-        const label = words.find((w) => /^V[1I]N[:.]?$/i.test(w.text));
+        let label = words.find((w) => /^V[1I]N[:.]?$/i.test(w.text));
+        // No label read: a garbled 15-19 character token is probably the VIN itself.
+        if (!label) { const tok = words.find((w) => /^[A-Z0-9]{15,19}$/i.test(w.text.replace(/[^A-Za-z0-9]/g, ''))); if (tok) label = { x: tok.x - tok.w * 0.15, y: tok.y, w: 0, h: tok.h }; }
         if (label && !features.ocrVin) {
           const raw = await P.renderPage(page, 300);
           const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
@@ -117,7 +119,7 @@ DS.App = (() => {
                          width: Math.min(W, Math.round(W * 0.42)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };
           if (rect.left + rect.width > W) rect.width = W - rect.left;
           if (rect.top + rect.height > H) rect.height = H - rect.top;
-          features.ocrVin = await P.ocrPool.recognize(prep.canvas, rect, features.pageHash);
+          features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, rect, features.pageHash);
           features.ocrVin.zoom = true;
         }
       }

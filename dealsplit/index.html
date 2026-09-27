@@ -771,9 +771,40 @@ DS.Perception = (() => {
       if (key) Store.put('ocr', key, res).catch(() => {});
       return res;
     },
+    /* Dedicated worker for VIN crops: VIN alphabet only, single text line. */
+    vinWorker: null, vinReady: null,
+    async recognizeVin(canvas, rect, cacheKey) {
+      const key = cacheKey ? `${cacheKey}:vin:${[rect.left, rect.top, rect.width, rect.height].join('x')}` : null;
+      if (key) { const hit = await Store.get('ocr', key).catch(() => undefined); if (hit) { this.stats.cacheHits++; return hit; } }
+      if (!this.vinReady) {
+        this.vinReady = (async () => {
+          const T = window.Tesseract;
+          const w = await T.createWorker('eng', 1, { ...(this.cfg.tesseractOptions || {}), cacheMethod: 'write' });
+          await w.setParameters({ tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789', tessedit_pageseg_mode: '7', preserve_interword_spaces: '1' });
+          this.vinWorker = w;
+        })();
+      }
+      await this.vinReady;
+      const t0 = now();
+      const { data } = await this.vinWorker.recognize(canvas, { rectangle: rect });
+      const W = canvas.width, H = canvas.height;
+      const words = [];
+      let confSum = 0;
+      for (const w of data.words || []) {
+        if (!w.text || !w.text.trim()) continue;
+        const b = w.bbox;
+        words.push({ text: w.text, conf: round(w.confidence / 100, 3), x: round(b.x0 / W, 4), y: round(b.y0 / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
+        confSum += w.confidence / 100;
+      }
+      const res = { words, meanConf: words.length ? round(confSum / words.length) : 0, text: normText(words.map((w) => w.text).join(' ')), ms: round(now() - t0, 1), vinMode: true };
+      this.stats.jobs++; this.stats.ms += res.ms;
+      if (key) Store.put('ocr', key, res).catch(() => {});
+      return res;
+    },
     async terminate() {
       if (this.scheduler) await this.scheduler.terminate();
-      this.scheduler = null; this.workers = []; this.ready = null;
+      if (this.vinWorker) await this.vinWorker.terminate();
+      this.scheduler = null; this.workers = []; this.ready = null; this.vinWorker = null; this.vinReady = null;
     },
   };
 
@@ -1480,7 +1511,7 @@ DS.Policy = (() => {
   /* All VIN candidates on a page from every text source, with provenance. */
   function extractVins(features, pageIndex) {
     const out = [];
-    const sources = [['textLayer', features.textLayer], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
+    const sources = [['textLayer', features.textLayer], ['ocrVin', features.ocrVin], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
     for (const [src, s] of sources) {
       if (!s) continue;
       const pageConf = src === 'textLayer' ? s.quality.score : s.meanConf;
@@ -1627,14 +1658,11 @@ DS.Policy = (() => {
       const strongRead = doc.vinCandidates.some((v) => v.vin === doc.vin && !v.guessed && (v.source === 'textLayer' || v.confidence >= 0.75));
       if (!strongRead) { doc.vinWeak = doc.vin; doc.vin = null; }
     }
-    // 2. Propagate along contiguous runs, conservatively: a doc without a
-    //    readable VIN takes its neighbours' VIN only when both neighbours
-    //    agree. A mis-grouped deal is worse than a document left for review.
-    for (let i = 0; i < docs.length; i++) {
-      if (docs[i].vin) continue;
-      const prev = docs[i - 1]?.vin, next = docs[i + 1]?.vin;
-      if (prev && next && prev === next) { docs[i].vin = prev; docs[i].vinPropagated = 'neighbours'; }
-    }
+    // 2. No VIN is propagated between documents. Pages inside one document
+    //    already share its VIN (step 1); a document whose VIN could not be
+    //    read waits in review with every raw candidate kept. Scans arrive out
+    //    of order, so a neighbour's VIN is a guess, and a mis-grouped deal is
+    //    worse than a document left for review.
     // 3. Group.
     const deals = new Map();
     for (const doc of docs) {
@@ -2090,7 +2118,9 @@ DS.App = (() => {
       } else if (need === 'vinZoom') {
         // 300 dpi on demand: OCR a small box to the right of a "VIN" label.
         const words = [...(features.ocrFull?.words || []), ...(features.ocrHeader?.words || [])];
-        const label = words.find((w) => /^V[1I]N[:.]?$/i.test(w.text));
+        let label = words.find((w) => /^V[1I]N[:.]?$/i.test(w.text));
+        // No label read: a garbled 15-19 character token is probably the VIN itself.
+        if (!label) { const tok = words.find((w) => /^[A-Z0-9]{15,19}$/i.test(w.text.replace(/[^A-Za-z0-9]/g, ''))); if (tok) label = { x: tok.x - tok.w * 0.15, y: tok.y, w: 0, h: tok.h }; }
         if (label && !features.ocrVin) {
           const raw = await P.renderPage(page, 300);
           const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
@@ -2099,7 +2129,7 @@ DS.App = (() => {
                          width: Math.min(W, Math.round(W * 0.42)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };
           if (rect.left + rect.width > W) rect.width = W - rect.left;
           if (rect.top + rect.height > H) rect.height = H - rect.top;
-          features.ocrVin = await P.ocrPool.recognize(prep.canvas, rect, features.pageHash);
+          features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, rect, features.pageHash);
           features.ocrVin.zoom = true;
         }
       }

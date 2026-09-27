@@ -512,9 +512,40 @@ DS.Perception = (() => {
       if (key) Store.put('ocr', key, res).catch(() => {});
       return res;
     },
+    /* Dedicated worker for VIN crops: VIN alphabet only, single text line. */
+    vinWorker: null, vinReady: null,
+    async recognizeVin(canvas, rect, cacheKey) {
+      const key = cacheKey ? `${cacheKey}:vin:${[rect.left, rect.top, rect.width, rect.height].join('x')}` : null;
+      if (key) { const hit = await Store.get('ocr', key).catch(() => undefined); if (hit) { this.stats.cacheHits++; return hit; } }
+      if (!this.vinReady) {
+        this.vinReady = (async () => {
+          const T = window.Tesseract;
+          const w = await T.createWorker('eng', 1, { ...(this.cfg.tesseractOptions || {}), cacheMethod: 'write' });
+          await w.setParameters({ tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789', tessedit_pageseg_mode: '7', preserve_interword_spaces: '1' });
+          this.vinWorker = w;
+        })();
+      }
+      await this.vinReady;
+      const t0 = now();
+      const { data } = await this.vinWorker.recognize(canvas, { rectangle: rect });
+      const W = canvas.width, H = canvas.height;
+      const words = [];
+      let confSum = 0;
+      for (const w of data.words || []) {
+        if (!w.text || !w.text.trim()) continue;
+        const b = w.bbox;
+        words.push({ text: w.text, conf: round(w.confidence / 100, 3), x: round(b.x0 / W, 4), y: round(b.y0 / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
+        confSum += w.confidence / 100;
+      }
+      const res = { words, meanConf: words.length ? round(confSum / words.length) : 0, text: normText(words.map((w) => w.text).join(' ')), ms: round(now() - t0, 1), vinMode: true };
+      this.stats.jobs++; this.stats.ms += res.ms;
+      if (key) Store.put('ocr', key, res).catch(() => {});
+      return res;
+    },
     async terminate() {
       if (this.scheduler) await this.scheduler.terminate();
-      this.scheduler = null; this.workers = []; this.ready = null;
+      if (this.vinWorker) await this.vinWorker.terminate();
+      this.scheduler = null; this.workers = []; this.ready = null; this.vinWorker = null; this.vinReady = null;
     },
   };
 
