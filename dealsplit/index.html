@@ -1259,6 +1259,16 @@ DS.Reasoner = (() => {
     if (ev.context >= 1.5) out.push('context');
     return out;
   }
+  /* Independent evidence groups for the CONFIDENT rule. Layout and region are
+   * both derived from the same exemplar images, so together they count once
+   * ("image"); structure is too weak to count. Text (anchor) and context are
+   * the other independent sources. Image-only evidence can never be CONFIDENT.
+   */
+  function independentGroups(families) {
+    const g = new Set();
+    for (const f of families) { if (f === 'anchor') g.add('anchor'); else if (f === 'layout' || f === 'region') g.add('image'); else if (f === 'context') g.add('context'); }
+    return [...g];
+  }
 
   /* ---------- decision rule ---------- */
   function decide(scored, features, thresholds, rung, library) {
@@ -1274,6 +1284,7 @@ DS.Reasoner = (() => {
     assert(!(top.layoutCapped && top.evidence.layout >= 2.5 && families.includes('layout') && tpl.exemplars.length >= thresholds.layoutMinExemplars),
       'layout cap bookkeeping');
     const famEff = families.filter((f) => !(f === 'layout' && top.layoutCapped));
+    const groups = independentGroups(famEff);
     // Text-only identity is forbidden when neither text source is trustworthy.
     const textOnly = famEff.every((f) => f === 'anchor' || f === 'context');
     if (textOnly && !scored.textTrusted && !scored.ocrTrusted) {
@@ -1282,13 +1293,12 @@ DS.Reasoner = (() => {
       return { state: top.total >= thresholds.likely ? 'LIKELY' : 'UNKNOWN', margin, families: famEff, notes, blocked: 'untrusted-text' };
     }
     let state = 'UNKNOWN';
-    if (top.total >= thresholds.accept && margin >= thresholds.margin && famEff.length >= 2) state = 'CONFIDENT';
+    if (top.total >= thresholds.accept && margin >= thresholds.margin && groups.length >= 2) state = 'CONFIDENT';
     else if (top.total >= thresholds.likely) state = 'LIKELY';
-    if (state === 'CONFIDENT' && top.layoutCapped && famEff.length < 2) state = 'LIKELY';
     if (state !== 'CONFIDENT') {
       if (top.total < thresholds.accept) notes.push(`score ${top.total} < accept ${thresholds.accept}`);
       if (margin < thresholds.margin) notes.push(`margin ${round(margin, 2)} < ${thresholds.margin}`);
-      if (famEff.length < 2) notes.push(`only ${famEff.length} evidence family agrees (${famEff.join(',') || 'none'})`);
+      if (groups.length < 2) notes.push(`only ${groups.length} independent evidence group (${groups.join(',') || 'none'}; families ${famEff.join('+') || 'none'})`);
       if (top.layoutCapped) notes.push(top.detail.layout.detail);
     }
     return { state, margin: round(margin, 2), families: famEff, notes };
@@ -1442,27 +1452,23 @@ DS.Policy = (() => {
   }
   const vinValid = (vin) => /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) && vinCheckDigit(vin) === vin[8];
 
-  /* Repair an OCR'd 17-char candidate. Unconditional: I→1, O→0, Q→0.
-   * Conditional (only if the check digit then validates): S↔5, B↔8, Z↔2, and
-   * at most two such substitutions.
+  /* Repair an OCR'd 17-char candidate. Unconditional: I→1, O→0, Q→0 (these
+   * letters never occur in a VIN). Conditional: one S↔5, B↔8 or Z↔2 swap,
+   * only if the check digit then validates; such a guess is marked
+   * `guessed` and must be corroborated before it can open a deal. The check
+   * digit only rejects about 10 of 11 wrong strings, so trying many variants
+   * would manufacture false VINs.
    */
   function repairVin(raw) {
     const base = raw.toUpperCase().replace(/I/g, '1').replace(/[OQ]/g, '0');
-    if (vinValid(base)) return { vin: base, repaired: base !== raw, steps: base !== raw ? ['IOQ'] : [] };
+    if (vinValid(base)) return { vin: base, repaired: base !== raw, guessed: false, steps: base !== raw ? ['IOQ'] : [] };
     const swaps = { S: '5', 5: 'S', B: '8', 8: 'B', Z: '2', 2: 'Z' };
-    const idx = [];
-    for (let i = 0; i < 17; i++) if (swaps[base[i]]) idx.push(i);
-    for (const i of idx) {
+    for (let i = 0; i < 17; i++) {
+      if (!swaps[base[i]]) continue;
       const c = base.slice(0, i) + swaps[base[i]] + base.slice(i + 1);
-      if (vinValid(c)) return { vin: c, repaired: true, steps: ['IOQ', `pos${i + 1}:${base[i]}→${swaps[base[i]]}`] };
+      if (vinValid(c)) return { vin: c, repaired: true, guessed: true, steps: ['IOQ', `pos${i + 1}:${base[i]}→${swaps[base[i]]}`] };
     }
-    for (let a = 0; a < idx.length; a++) for (let b = a + 1; b < idx.length; b++) {
-      const i = idx[a], j = idx[b];
-      let c = base.slice(0, i) + swaps[base[i]] + base.slice(i + 1);
-      c = c.slice(0, j) + swaps[base[j]] + c.slice(j + 1);
-      if (vinValid(c)) return { vin: c, repaired: true, steps: ['IOQ', `pos${i + 1}`, `pos${j + 1}`] };
-    }
-    return { vin: null, repaired: false, steps: [] };
+    return { vin: null, repaired: false, guessed: false, steps: [] };
   }
 
   /* All VIN candidates on a page from every text source, with provenance. */
@@ -1480,7 +1486,7 @@ DS.Policy = (() => {
         seen.add(tok);
         const r = repairVin(tok);
         const conf = src === 'textLayer' ? pageConf : (w.conf ?? pageConf);
-        out.push({ raw: tok, vin: r.vin, valid: !!r.vin, repaired: r.repaired, steps: r.steps, source: src, confidence: round(conf), pageIndex });
+        out.push({ raw: tok, vin: r.vin, valid: !!r.vin, repaired: r.repaired, guessed: r.guessed, steps: r.steps, source: src, confidence: round(conf), pageIndex });
       }
       // Also try tokens split by OCR noise: 17 chars across two adjacent words
       const words = s.words.map((w) => w.text.toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -1489,7 +1495,7 @@ DS.Policy = (() => {
         if (j.length === 17 && !seen.has(j)) {
           const r = repairVin(j);
           const conf = src === 'textLayer' ? pageConf : Math.min(s.words[i].conf ?? pageConf, s.words[i + 1].conf ?? pageConf);
-          if (r.vin) { seen.add(j); out.push({ raw: j, vin: r.vin, valid: true, repaired: r.repaired, steps: [...r.steps, 'joined'], source: src, confidence: round(conf * 0.8), pageIndex }); }
+          if (r.vin) { seen.add(j); out.push({ raw: j, vin: r.vin, valid: true, repaired: r.repaired, guessed: true, steps: [...r.steps, 'joined'], source: src, confidence: round(conf * 0.8), pageIndex }); }
         }
       }
     }
@@ -1577,7 +1583,7 @@ DS.Policy = (() => {
       const cands = doc.pages.flatMap((p) => p.vins || []).filter((v) => v.valid);
       const tally = new Map();
       for (const v of cands) {
-        const w = v.confidence * (v.source === 'textLayer' ? 1.2 : 1) * (v.repaired ? 0.8 : 1) * (strong.has(doc.family) ? 1.3 : 1);
+        const w = v.confidence * (v.source === 'textLayer' ? 1.2 : 1) * (v.guessed ? 0.3 : v.repaired ? 0.8 : 1) * (strong.has(doc.family) ? 1.3 : 1);
         tally.set(v.vin, (tally.get(v.vin) || 0) + w);
       }
       const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -1609,7 +1615,7 @@ DS.Policy = (() => {
     for (const doc of docs) if (doc.vin) seenBy.set(doc.vin, (seenBy.get(doc.vin) || 0) + 1);
     for (const doc of docs) {
       if (!doc.vin || seenBy.get(doc.vin) > 1) continue;
-      const strongRead = doc.vinCandidates.some((v) => v.vin === doc.vin && (v.source === 'textLayer' || v.confidence >= 0.6));
+      const strongRead = doc.vinCandidates.some((v) => v.vin === doc.vin && !v.guessed && (v.source === 'textLayer' || v.confidence >= 0.75));
       if (!strongRead) { doc.vinWeak = doc.vin; doc.vin = null; }
     }
     // 2. Propagate along contiguous runs, conservatively: a doc without a
@@ -1629,7 +1635,10 @@ DS.Policy = (() => {
       deal.docs.push(doc);
       if (doc.family && doc.family !== 'UNKNOWN') deal.families.add(doc.family);
     }
-    // 4. Deal type + last name + checklist.
+    // 4. Deal type + last name + checklist. A deal that shows only a buyer's
+    //    order is CASH only when no contract in the batch is still unassigned;
+    //    otherwise its contract may simply have an unreadable VIN.
+    const unassignedContract = (deals.get('_NOVIN')?.docs || []).some((d) => d.family === 'RISC' || d.family === 'LEASE');
     const out = [];
     for (const deal of deals.values()) {
       const fams = deal.families;
@@ -1640,8 +1649,9 @@ DS.Policy = (() => {
       if (hasRetail && hasLease) ambiguous = true;
       else if (hasRetail) type = 'RETAIL';
       else if (hasLease) type = 'LEASE';
-      else if (signals.includes('CASH_IF_ALONE')) type = 'CASH';
+      else if (signals.includes('CASH_IF_ALONE')) { if (unassignedContract) ambiguous = true; else type = 'CASH'; }
       deal.dealType = type; deal.ambiguousType = ambiguous;
+      if (ambiguous && !hasRetail) deal.ambiguityNote = 'no contract found for this VIN, but contracts with unreadable VINs exist in this batch';
       deal.lastName = guessLastName(deal.docs);
       const req = type ? (library.dealTypes[type]?.required || []) : [];
       deal.missing = req.filter((fam) => !fams.has(fam)).map((fam) => library.templates.find((t) => t.family === fam)?.displayName || fam);

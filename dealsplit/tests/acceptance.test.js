@@ -54,6 +54,7 @@ const { open, check, summary } = require('./harness.js');
     const notConf = known.filter((p) => !(p.st === 'CONFIDENT' && p.t === truth[p.i].templateId));
     for (const p of notConf.slice(0, 12)) console.log(`    p.${p.i + 1} ${truth[p.i].templateId} ${truth[p.i].variant} rev${truth[p.i].rev} pg${truth[p.i].pageNo} → ${p.st} ${p.t || p.top} score ${p.score} margin ${p.margin} rung ${p.rung} fam ${p.fam.join('+')} :: ${p.notes.join(' · ')}`);
     check(cw.length === 0, `confident-wrong: ${cw.length} ${JSON.stringify(cw.map((p) => [p.i + 1, truth[p.i].templateId, p.t]))}`);
+    for (const p of cw) { const led = await page.evaluate((i) => DealSplit.state.pages[i].decision.candidates.slice(0, 2).map((c) => ({ t: c.templateId, total: c.total, ev: c.evidence, anchors: (c.detail.anchor || []).map((h) => `${h.text}~${h.sim}@${h.conf}`) })), p.i); console.log(`    CONFIDENT-WRONG p.${p.i + 1} (${truth[p.i].variant}): fam ${p.fam.join('+')} ${JSON.stringify(led)}`); }
     const byVariant = {};
     for (const p of known) { const v = truth[p.i].variant; byVariant[v] = byVariant[v] || { n: 0, ok: 0 }; byVariant[v].n++; if (p.st === 'CONFIDENT' && p.t === truth[p.i].templateId) byVariant[v].ok++; }
     console.log('  by variant: ' + Object.entries(byVariant).map(([k, v]) => `${k} ${v.ok}/${v.n}`).join(', '));

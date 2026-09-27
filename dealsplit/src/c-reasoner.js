@@ -183,6 +183,16 @@ DS.Reasoner = (() => {
     if (ev.context >= 1.5) out.push('context');
     return out;
   }
+  /* Independent evidence groups for the CONFIDENT rule. Layout and region are
+   * both derived from the same exemplar images, so together they count once
+   * ("image"); structure is too weak to count. Text (anchor) and context are
+   * the other independent sources. Image-only evidence can never be CONFIDENT.
+   */
+  function independentGroups(families) {
+    const g = new Set();
+    for (const f of families) { if (f === 'anchor') g.add('anchor'); else if (f === 'layout' || f === 'region') g.add('image'); else if (f === 'context') g.add('context'); }
+    return [...g];
+  }
 
   /* ---------- decision rule ---------- */
   function decide(scored, features, thresholds, rung, library) {
@@ -198,6 +208,7 @@ DS.Reasoner = (() => {
     assert(!(top.layoutCapped && top.evidence.layout >= 2.5 && families.includes('layout') && tpl.exemplars.length >= thresholds.layoutMinExemplars),
       'layout cap bookkeeping');
     const famEff = families.filter((f) => !(f === 'layout' && top.layoutCapped));
+    const groups = independentGroups(famEff);
     // Text-only identity is forbidden when neither text source is trustworthy.
     const textOnly = famEff.every((f) => f === 'anchor' || f === 'context');
     if (textOnly && !scored.textTrusted && !scored.ocrTrusted) {
@@ -206,13 +217,12 @@ DS.Reasoner = (() => {
       return { state: top.total >= thresholds.likely ? 'LIKELY' : 'UNKNOWN', margin, families: famEff, notes, blocked: 'untrusted-text' };
     }
     let state = 'UNKNOWN';
-    if (top.total >= thresholds.accept && margin >= thresholds.margin && famEff.length >= 2) state = 'CONFIDENT';
+    if (top.total >= thresholds.accept && margin >= thresholds.margin && groups.length >= 2) state = 'CONFIDENT';
     else if (top.total >= thresholds.likely) state = 'LIKELY';
-    if (state === 'CONFIDENT' && top.layoutCapped && famEff.length < 2) state = 'LIKELY';
     if (state !== 'CONFIDENT') {
       if (top.total < thresholds.accept) notes.push(`score ${top.total} < accept ${thresholds.accept}`);
       if (margin < thresholds.margin) notes.push(`margin ${round(margin, 2)} < ${thresholds.margin}`);
-      if (famEff.length < 2) notes.push(`only ${famEff.length} evidence family agrees (${famEff.join(',') || 'none'})`);
+      if (groups.length < 2) notes.push(`only ${groups.length} independent evidence group (${groups.join(',') || 'none'}; families ${famEff.join('+') || 'none'})`);
       if (top.layoutCapped) notes.push(top.detail.layout.detail);
     }
     return { state, margin: round(margin, 2), families: famEff, notes };
