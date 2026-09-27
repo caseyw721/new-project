@@ -2268,7 +2268,7 @@ DS.App = (() => {
         const z = R.zoneOf(w, box);
         if (z === 'body') continue;
         const t = DS.Infra.normText(w.text);
-        const good = w.conf >= 0.75 && t.length >= 3 && plaus(w.text) >= 1 && !/^\d+$/.test(t);
+        const good = w.conf >= 0.75 && t.length >= 2 && (plaus(w.text) >= 1 || /^\d+$/.test(t));
         zones[z].push(good ? t : null);
       }
       for (const zone of ['header', 'footer']) {
@@ -2276,9 +2276,11 @@ DS.App = (() => {
         for (let i = 0; i < seq.length && out.length < 10; i++) {
           if (!seq[i]) continue;
           const run = []; while (i < seq.length && seq[i] && run.length < 3) run.push(seq[i++]);
+          if (!run.some((t) => /^[A-Z]{3,}/.test(t))) continue;          // needs a real word
           const phrase = run.join(' ');
-          const isId = run.length === 1 && /[A-Z]/.test(phrase) && /\d/.test(phrase);
-          if ((run.length >= 2 || isId) && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: isId ? 4 : 2 });
+          // A form id: letters plus digits ("RO-553-CA", "DPA 41"). Strongest anchor.
+          const isId = /[A-Z]/.test(phrase) && /\d/.test(phrase) && run.length <= 3;
+          if ((run.length >= 2 || isId) && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: isId ? 4 : 2, fuzzy: isId ? 0.8 : 0.85 });
         }
       }
     }
