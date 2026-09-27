@@ -57,10 +57,10 @@ DS.App = (() => {
   };
 
   /* ---------- perception per page (the ladder's callback) ---------- */
-  async function perceiveFactory(pageIndex) {
+  async function perceiveFactory(pageIndex, existing) {
     const page = await state.pdf.getPage(pageIndex + 1);
     let r72 = null, r150 = null, gray = null;
-    const features = { pageIndex, quality: {} };
+    const features = existing || { pageIndex, quality: {} };
     // OCR runs on a cleaned image (denoised, deskewed, binarized); tesseract is
     // several times faster and more accurate on it than on a noisy scan.
     const render150 = async () => {
@@ -116,7 +116,7 @@ DS.App = (() => {
           const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
           const W = raw.width, H = raw.height;
           const rect = { left: Math.max(0, Math.round((label.x + label.w) * W) - 4), top: Math.max(0, Math.round((label.y - label.h * 0.6) * H)),
-                         width: Math.min(W, Math.round(W * 0.42)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };
+                         width: Math.min(W, Math.round(W * 0.24)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };  // ~17 monospace chars
           if (rect.left + rect.width > W) rect.width = W - rect.left;
           if (rect.top + rect.height > H) rect.height = H - rect.top;
           features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, rect, features.pageHash);
@@ -187,8 +187,7 @@ DS.App = (() => {
     const zoomWorker = async (start) => {
       for (let k = start; k < zoomJobs.length; k += conc) {
         const i = zoomJobs[k];
-        const perceive = await perceiveFactory(i);
-        Object.assign(perceive.features = results[i].features, {});
+        const perceive = await perceiveFactory(i, results[i].features);
         try { await perceive('vinZoom'); } catch (e) { console.warn('vin zoom', e); }
         results[i].vins = Pol.extractVins(results[i].features, i);
         onProgress?.({ done: n, total: n, page: i + 1, rung: 'VIN-ZOOM', state: results[i].decision.state });

@@ -1519,11 +1519,16 @@ DS.Policy = (() => {
       // Confidence of a candidate is the confidence of the word(s) it came from.
       for (const w of s.words) {
         const tok = w.text.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (tok.length !== 17 || seen.has(tok)) continue;
-        seen.add(tok);
-        const r = repairVin(tok);
+        if (tok.length < 17 || tok.length > 26) continue;
         const conf = src === 'textLayer' ? pageConf : (w.conf ?? pageConf);
-        out.push({ raw: tok, vin: r.vin, valid: !!r.vin, repaired: r.repaired, guessed: r.guessed, steps: r.steps, source: src, confidence: round(conf), pageIndex });
+        // Over-long tokens (VIN glued to the next word by OCR): try every 17-char window.
+        for (let k = 0; k + 17 <= tok.length; k++) {
+          const cand = tok.slice(k, k + 17);
+          if (seen.has(cand)) continue;
+          seen.add(cand);
+          const r = repairVin(cand);
+          out.push({ raw: cand, vin: r.vin, valid: !!r.vin, repaired: r.repaired, guessed: r.guessed || k > 0, steps: k > 0 ? [...r.steps, `window${k}`] : r.steps, source: src, confidence: round(conf), pageIndex });
+        }
       }
       // Also try tokens split by OCR noise: 17 chars across two adjacent words
       const words = s.words.map((w) => w.text.toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -1630,6 +1635,22 @@ DS.Policy = (() => {
       doc.vin = best ? best[0] : null;
       doc.vinWeight = best ? round(best[1], 2) : 0;
       doc.vinCandidates = cands;
+    }
+    // 1a. Dictionary match: the batch's strongly read VINs (text layer, or
+    //     OCR at high confidence) are the only VINs that can exist in it. A raw
+    //     17-character read, valid or not, within 2 characters of exactly one
+    //     strong VIN is that VIN. Random strings never come that close.
+    const strongVins = new Set();
+    for (const doc of docs) for (const v of doc.vinCandidates) if (v.valid && !v.guessed && (v.source === 'textLayer' || v.confidence >= 0.75)) strongVins.add(v.vin);
+    const hamRaw = (a, b) => { let d = 0; for (let i = 0; i < 17; i++) if (a[i] !== b[i]) d++; return d; };
+    for (const doc of docs) {
+      if (doc.vin && strongVins.has(doc.vin)) continue;
+      const raws = doc.pages.flatMap((p) => (p.vins || []).map((v) => v.raw.replace(/I/g, '1').replace(/[OQ]/g, '0')));
+      let match = null, ambiguous = false;
+      for (const raw of raws) for (const sv of strongVins) {
+        if (hamRaw(raw, sv) <= 2) { if (match && match !== sv) ambiguous = true; match = sv; }
+      }
+      if (match && !ambiguous) { doc.vinMatchedFrom = doc.vin || raws[0]; doc.vin = match; doc.vinWeight = Math.max(doc.vinWeight, 1); }
     }
     // 1b. OCR misreads produce VINs that differ from the true one by a character
     //     or two and can still pass the check digit. Merge each weak VIN into the
@@ -1739,7 +1760,7 @@ DS.Policy = (() => {
         const path = `${dir}/${base}.pdf`;
         files.push({ path, pages: pgs.map((p) => p.pageIndex), kind: review ? 'review' : 'doc', docId: doc.id });
         manifest.documents.push({ file: path, templateId: doc.templateId, displayName: tpl?.displayName || null, state: doc.state,
-          sourcePages: pgs.map((p) => p.pageIndex + 1), vin: doc.vin, vinPropagated: doc.vinPropagated || null, vinMergedFrom: doc.vinMergedFrom || null,
+          sourcePages: pgs.map((p) => p.pageIndex + 1), vin: doc.vin, vinPropagated: doc.vinPropagated || null, vinMergedFrom: doc.vinMergedFrom || null, vinMatchedFrom: doc.vinMatchedFrom || null,
           decisions: pgs.map((p) => ({ page: p.pageIndex + 1, state: p.decision.state, templateId: p.decision.templateId, score: p.decision.score, margin: p.decision.margin, rung: p.decision.rung,
             override: p.override || null, topCandidates: p.decision.candidates.slice(0, 3).map((c) => ({ templateId: c.templateId, total: c.total })) })) });
         if (review) {
@@ -2067,10 +2088,10 @@ DS.App = (() => {
   };
 
   /* ---------- perception per page (the ladder's callback) ---------- */
-  async function perceiveFactory(pageIndex) {
+  async function perceiveFactory(pageIndex, existing) {
     const page = await state.pdf.getPage(pageIndex + 1);
     let r72 = null, r150 = null, gray = null;
-    const features = { pageIndex, quality: {} };
+    const features = existing || { pageIndex, quality: {} };
     // OCR runs on a cleaned image (denoised, deskewed, binarized); tesseract is
     // several times faster and more accurate on it than on a noisy scan.
     const render150 = async () => {
@@ -2126,7 +2147,7 @@ DS.App = (() => {
           const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
           const W = raw.width, H = raw.height;
           const rect = { left: Math.max(0, Math.round((label.x + label.w) * W) - 4), top: Math.max(0, Math.round((label.y - label.h * 0.6) * H)),
-                         width: Math.min(W, Math.round(W * 0.42)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };
+                         width: Math.min(W, Math.round(W * 0.24)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };  // ~17 monospace chars
           if (rect.left + rect.width > W) rect.width = W - rect.left;
           if (rect.top + rect.height > H) rect.height = H - rect.top;
           features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, rect, features.pageHash);
@@ -2197,8 +2218,7 @@ DS.App = (() => {
     const zoomWorker = async (start) => {
       for (let k = start; k < zoomJobs.length; k += conc) {
         const i = zoomJobs[k];
-        const perceive = await perceiveFactory(i);
-        Object.assign(perceive.features = results[i].features, {});
+        const perceive = await perceiveFactory(i, results[i].features);
         try { await perceive('vinZoom'); } catch (e) { console.warn('vin zoom', e); }
         results[i].vins = Pol.extractVins(results[i].features, i);
         onProgress?.({ done: n, total: n, page: i + 1, rung: 'VIN-ZOOM', state: results[i].decision.state });
