@@ -80,7 +80,7 @@ DS.Reasoner = (() => {
       if (best) {
         const strength = (best.sim - a.fuzzy) / (1 - a.fuzzy);        // 0..1 above the template's threshold
         const c = sign * Math.abs(a.weight) * (0.5 + 0.5 * strength) * best.reliability;
-        hits.push({ text: a.text, zone: a.zone, sim: round(best.sim), conf: round(best.conf), source: best.source, contribution: round(c, 2) });
+        hits.push({ text: a.text, zone: a.zone, weight: a.weight, sim: round(best.sim), conf: round(best.conf), source: best.source, contribution: round(c, 2) });
         total += c;
         if (best.source !== 'textLayer' && best.conf >= thresholds.ocrConfMin) trustedOcrHit = true;
       }
@@ -150,6 +150,7 @@ DS.Reasoner = (() => {
   }
 
   /* ---------- per-page scoring ---------- */
+  const TITLED_ELSEWHERE = 2;
   function scorePage(features, library, thresholds) {
     const views = buildTextView(features, thresholds);
     const fp = features.fingerprint;
@@ -165,6 +166,20 @@ DS.Reasoner = (() => {
       rows.push({ templateId: tpl.id, family: tpl.family, total: round(total, 2), evidence: ev,
                   detail: { anchor: anchor.hits, negative: negative.hits, layout, region, structure },
                   layoutCapped: !!layout.capped });
+    }
+    // The page names itself: an exact, confidently read hit on a strong anchor
+    // (a title, weight ≥ 3) of template A is negative evidence for every
+    // template whose anchors were all absent from the same text. Look-alike
+    // layouts of a different form must not outrank a clearly read title.
+    const titled = rows.filter((r) => r.detail.anchor.some((h) => h.weight >= 3 && h.sim >= 0.95 && (h.source === 'textLayer' || h.conf >= 0.85)));
+    if (titled.length === 1) {
+      const t = titled[0];
+      for (const r of rows) {
+        if (r === t || r.detail.anchor.length || !library.byId(r.templateId)?.anchors?.length) continue;
+        r.evidence.negative = round(r.evidence.negative - TITLED_ELSEWHERE, 2);
+        r.total = round(r.total - TITLED_ELSEWHERE, 2);
+        r.detail.negative = [...r.detail.negative, { text: `page titled as ${t.templateId}`, zone: 'header', sim: 1, conf: 1, source: 'inferred', contribution: -TITLED_ELSEWHERE }];
+      }
     }
     rows.sort((a, b) => b.total - a.total);
     const textTrusted = views.some((v) => v.trusted && v.source === 'textLayer');

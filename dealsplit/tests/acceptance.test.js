@@ -100,22 +100,24 @@ const { open, check, summary } = require('./harness.js');
     console.log('learning a new document type from an UNKNOWN page');
     const learn = await page.evaluate(async () => {
       const truth = window.__acc.truth;
-      // The clerk creates the type from the clearest example (a clean page), then confirms one more.
+      // The clerk creates the type from the clearest example (a clean page), then
+      // confirms the next one in the review queue (a scan) as the second exemplar.
       const unseen = DealSplit.state.pages.filter((p) => truth[p.pageIndex].templateId === null).map((p) => p.pageIndex)
         .sort((a, b) => (truth[a].variant === 'clean' ? 0 : 1) - (truth[b].variant === 'clean' ? 0 : 1));
       const sug = DealSplit.suggestAnchors(DealSplit.state.pages[unseen[0]].features);
       await DealSplit.createTemplateFromPage(unseen[0], { id: 'DPA', displayName: 'Dealer Participation Agreement', family: 'DPA', folder: '05_Compliance', requiredFor: [], anchors: sug });
-      await DealSplit.confirm(unseen[1], 'DPA', 'correct');
+      const second = unseen.find((i) => truth[i].variant !== 'clean') ?? unseen[1];
+      await DealSplit.confirm(second, 'DPA', 'correct');
       const ex = DealSplit.lib.byId('DPA').exemplars.length;
       await DealSplit.run();
-      const after = unseen.map((i) => { const d = DealSplit.state.pages[i].decision; const dpa = d.candidates.find((c) => c.templateId === 'DPA'); return { i, v: truth[i].variant, st: d.state, t: d.templateId, top: d.candidates[0]?.templateId, dpaAnchor: dpa?.evidence.anchor ?? 0, textOk: d.textSources.some((s) => s.trusted) || (dpa?.detail?.anchor || []).some((h) => h.conf >= 0.55) }; });
+      const after = unseen.filter((i) => i !== second).map((i) => { const d = DealSplit.state.pages[i].decision; const dpa = d.candidates.find((c) => c.templateId === 'DPA'); return { i, v: truth[i].variant, st: d.state, t: d.templateId, top: d.candidates[0]?.templateId, dpaAnchor: dpa?.evidence.anchor ?? 0, textOk: d.textSources.some((s) => s.trusted) || (dpa?.detail?.anchor || []).some((h) => h.conf >= 0.55) }; });
       const stillOk = DealSplit.state.pages.filter((p) => truth[p.pageIndex].templateId && p.decision.state === 'CONFIDENT' && p.decision.templateId === truth[p.pageIndex].templateId).length;
       const cw = DealSplit.state.pages.filter((p) => p.decision.state === 'CONFIDENT' && p.decision.templateId !== (truth[p.pageIndex].templateId || 'DPA')).length;
       const corr = await DS.RCA.failureCounts();
       return { sug, ex, after, stillOk, cw, corr };
     });
     check(learn.sug.length > 0, `anchor suggestions offered: ${learn.sug.map((a) => a.text).join(' | ')}`);
-    const sib = learn.after.slice(2);
+    const sib = learn.after.slice(1);
     check(learn.sug.some((a) => /PARTICIPATION AGREEMENT/.test(a.text)) && learn.sug.some((a) => /DPA/.test(a.text)), `title and form id suggested as anchors`);
     check(learn.ex >= 2 && sib.filter((p) => p.textOk).every((p) => p.t === 'DPA' || p.top === 'DPA') && sib.filter((p) => p.top === 'DPA').length >= 2,
       `siblings recognized as DPA after ${learn.ex} exemplars (CONFIDENT where the scan reads): ${JSON.stringify(learn.after)}`);

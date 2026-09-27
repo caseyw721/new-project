@@ -262,7 +262,13 @@ DS.App = (() => {
     for (const k of ['ocrHeader', 'ocrFooter', 'ocrFull']) if (features[k]) sources.push(features[k].words);
     const out = [];
     const seenText = new Set();
-    const add = (text, zone, weight, fuzzy) => { if (!seenText.has(text)) { seenText.add(text); out.push({ text, zone, weight, fuzzy }); } };
+    // Header text of pages confidently identified as other forms in this batch:
+    // a phrase found there too (dealership name, "Page 1 of") is not distinctive.
+    const otherHeaders = state.pages.filter((p) => p.decision?.state === 'CONFIDENT' && p.features !== features)
+      .map((p) => { const f = p.features; const t = (f.textLayer && f.textLayer.quality.score >= lib.settings.thresholds.textQualityMin) ? f.textLayer.words : (f.ocrHeader?.words || f.ocrFull?.words || []);
+        return DS.Infra.normText(t.filter((w) => R.zoneOf(w, f.fingerprint?.contentBox) !== 'body').map((w) => w.text).join(' ')); });
+    const onOtherForms = (text) => otherHeaders.filter((h) => h && DS.Infra.fuzzyFind(text, h).sim >= 0.9).length >= 2;
+    const add = (text, zone, weight, fuzzy) => { if (!seenText.has(text) && !onOtherForms(text)) { seenText.add(text); out.push({ text, zone, weight, fuzzy }); } };
     for (const words of sources) {
       const zones = { header: [], footer: [] };
       for (const w of words) {
