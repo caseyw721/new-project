@@ -150,7 +150,7 @@ DS.Reasoner = (() => {
   }
 
   /* ---------- per-page scoring ---------- */
-  const TITLED_ELSEWHERE = 2;
+  const TITLED_ELSEWHERE = 2, TITLED_IMAGE_CAP = 2;
   function scorePage(features, library, thresholds) {
     const views = buildTextView(features, thresholds);
     const fp = features.fingerprint;
@@ -168,17 +168,21 @@ DS.Reasoner = (() => {
                   layoutCapped: !!layout.capped });
     }
     // The page names itself: an exact, confidently read hit on a strong anchor
-    // (a title, weight ≥ 3) of template A is negative evidence for every
-    // template whose anchors were all absent from the same text. Look-alike
-    // layouts of a different form must not outrank a clearly read title.
-    const titled = rows.filter((r) => r.detail.anchor.some((h) => h.weight >= 3 && h.sim >= 0.95 && (h.source === 'textLayer' || h.conf >= 0.85)));
+    // (a title, weight ≥ 3) of template A means every template whose anchors
+    // were all absent from the same text is a look-alike, not a candidate.
+    // Forms from one dealership share a skeleton, so their layouts resemble
+    // each other (especially when scanner noise dominates the hash): image
+    // evidence for such a template is capped and a negative is recorded.
+    const titled = rows.filter((r) => r.detail.anchor.some((h) => h.weight >= 3 && h.sim >= 0.95 && (h.source === 'textLayer' || h.conf >= thresholds.ocrConfMin)));
     if (titled.length === 1) {
       const t = titled[0];
       for (const r of rows) {
         if (r === t || r.detail.anchor.length || !library.byId(r.templateId)?.anchors?.length) continue;
+        const img = r.evidence.layout + r.evidence.region;
+        if (img > TITLED_IMAGE_CAP) { const k = TITLED_IMAGE_CAP / img; r.evidence.layout = round(r.evidence.layout * k, 2); r.evidence.region = round(r.evidence.region * k, 2); }
         r.evidence.negative = round(r.evidence.negative - TITLED_ELSEWHERE, 2);
-        r.total = round(r.total - TITLED_ELSEWHERE, 2);
-        r.detail.negative = [...r.detail.negative, { text: `page titled as ${t.templateId}`, zone: 'header', sim: 1, conf: 1, source: 'inferred', contribution: -TITLED_ELSEWHERE }];
+        r.total = round(r.evidence.anchor + r.evidence.layout + r.evidence.region + r.evidence.structure + r.evidence.negative, 2);
+        r.detail.negative = [...r.detail.negative, { text: `page titled as ${t.templateId}`, zone: 'header', sim: 1, conf: 1, source: 'inferred', contribution: -TITLED_ELSEWHERE, imageCapped: img > TITLED_IMAGE_CAP }];
       }
     }
     rows.sort((a, b) => b.total - a.total);
