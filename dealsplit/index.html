@@ -2144,13 +2144,20 @@ DS.App = (() => {
         if (!label) { const tok = words.find((w) => /^[A-Z0-9]{15,19}$/i.test(w.text.replace(/[^A-Za-z0-9]/g, ''))); if (tok) label = { x: tok.x - tok.w * 0.15, y: tok.y, w: 0, h: tok.h }; }
         if (label && !features.ocrVin) {
           const raw = await P.renderPage(page, 300);
-          const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
           const W = raw.width, H = raw.height;
+          // Crop first (with margin), then clean only the crop: ~20× cheaper than
+          // preparing the whole 300-dpi page. Skew is already small for a crop.
           const rect = { left: Math.max(0, Math.round((label.x + label.w) * W) - 4), top: Math.max(0, Math.round((label.y - label.h * 0.6) * H)),
                          width: Math.min(W, Math.round(W * 0.24)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };  // ~17 monospace chars
           if (rect.left + rect.width > W) rect.width = W - rect.left;
           if (rect.top + rect.height > H) rect.height = H - rect.top;
-          features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, rect, features.pageHash);
+          const m = 24;
+          const cx = Math.max(0, rect.left - m), cy = Math.max(0, rect.top - m);
+          const cw = Math.min(W - cx, rect.width + 2 * m), ch = Math.min(H - cy, rect.height + 2 * m);
+          const crop = P.makeCanvas(cw, ch);
+          crop.getContext('2d').drawImage(raw.canvas, cx, cy, cw, ch, 0, 0, cw, ch);
+          const prep = P.prepareForOcr(crop, 0);
+          features.ocrVin = await P.ocrPool.recognizeVin(prep.canvas, { left: rect.left - cx, top: rect.top - cy, width: rect.width, height: rect.height }, features.pageHash);
           features.ocrVin.zoom = true;
         }
       }
