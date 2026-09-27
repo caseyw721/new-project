@@ -151,6 +151,19 @@ DS.Policy = (() => {
       doc.vinWeight = best ? round(best[1], 2) : 0;
       doc.vinCandidates = cands;
     }
+    // 1b. OCR misreads produce VINs that differ from the true one by a character
+    //     or two and can still pass the check digit. Merge each weak VIN into the
+    //     strongest VIN within Hamming distance 2 (recorded for the manifest).
+    const strength = new Map();
+    for (const doc of docs) if (doc.vin) strength.set(doc.vin, (strength.get(doc.vin) || 0) + doc.vinWeight);
+    const vins = [...strength.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+    const ham = (a, b) => { let d = 0; for (let i = 0; i < 17; i++) if (a[i] !== b[i]) d++; return d; };
+    const merged = new Map();
+    for (let i = 0; i < vins.length; i++) {
+      if (merged.has(vins[i])) continue;
+      for (let j = i + 1; j < vins.length; j++) if (!merged.has(vins[j]) && ham(vins[i], vins[j]) <= 2) merged.set(vins[j], vins[i]);
+    }
+    for (const doc of docs) if (doc.vin && merged.has(doc.vin)) { doc.vinMergedFrom = doc.vin; doc.vin = merged.get(doc.vin); }
     // 2. Propagate along contiguous runs: a doc without a VIN takes the VIN of
     //    its neighbours when both neighbours agree, or the previous when the
     //    next has none.
@@ -232,7 +245,7 @@ DS.Policy = (() => {
         const path = `${dir}/${base}.pdf`;
         files.push({ path, pages: pgs.map((p) => p.pageIndex), kind: review ? 'review' : 'doc', docId: doc.id });
         manifest.documents.push({ file: path, templateId: doc.templateId, displayName: tpl?.displayName || null, state: doc.state,
-          sourcePages: pgs.map((p) => p.pageIndex + 1), vin: doc.vin, vinPropagated: doc.vinPropagated || null,
+          sourcePages: pgs.map((p) => p.pageIndex + 1), vin: doc.vin, vinPropagated: doc.vinPropagated || null, vinMergedFrom: doc.vinMergedFrom || null,
           decisions: pgs.map((p) => ({ page: p.pageIndex + 1, state: p.decision.state, templateId: p.decision.templateId, score: p.decision.score, margin: p.decision.margin, rung: p.decision.rung,
             override: p.override || null, topCandidates: p.decision.candidates.slice(0, 3).map((c) => ({ templateId: c.templateId, total: c.total })) })) });
         if (review) {

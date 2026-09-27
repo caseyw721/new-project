@@ -202,19 +202,34 @@ DS.App = (() => {
     await lib.save();
     return confirm(pageIndex, id, 'new-type');
   }
-  /* Candidate anchors for a new template: distinctive header/footer phrases. */
+  /* Candidate anchors for a new template: distinctive header/footer phrases
+   * made only of words the source is sure about and that look like words or
+   * form ids (no OCR glyph soup).
+   */
   function suggestAnchors(features) {
     const box = features.fingerprint?.contentBox;
-    const views = R.buildTextView(features, { textQualityMin: 0.3, ocrConfMin: 0.4 });
+    const plaus = P._internal.tokenPlausible;
+    const sources = [];
+    if (features.textLayer && features.textLayer.quality.score >= lib.settings.thresholds.textQualityMin) sources.push(features.textLayer.words.map((w) => ({ ...w, conf: 1 })));
+    for (const k of ['ocrHeader', 'ocrFooter', 'ocrFull']) if (features[k]) sources.push(features[k].words);
     const out = [];
-    for (const v of views) {
+    for (const words of sources) {
+      const zones = { header: [], footer: [] };
+      for (const w of words) {
+        const z = R.zoneOf(w, box);
+        if (z === 'body') continue;
+        const t = DS.Infra.normText(w.text);
+        const good = w.conf >= 0.75 && t.length >= 3 && plaus(w.text) >= 1 && !/^\d+$/.test(t);
+        zones[z].push(good ? t : null);
+      }
       for (const zone of ['header', 'footer']) {
-        const t = v.zoneText[zone];
-        if (!t) continue;
-        const words = t.split(' ').filter((w) => w.length > 2);
-        for (let i = 0; i < words.length && out.length < 12; i += 3) {
-          const phrase = words.slice(i, i + 3).join(' ');
-          if (phrase.length >= 8 && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: zone === 'footer' && /\d/.test(phrase) ? 4 : 2 });
+        const seq = zones[zone];
+        for (let i = 0; i < seq.length && out.length < 10; i++) {
+          if (!seq[i]) continue;
+          const run = []; while (i < seq.length && seq[i] && run.length < 3) run.push(seq[i++]);
+          const phrase = run.join(' ');
+          const isId = run.length === 1 && /[A-Z]/.test(phrase) && /\d/.test(phrase);
+          if ((run.length >= 2 || isId) && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: isId ? 4 : 2 });
         }
       }
     }

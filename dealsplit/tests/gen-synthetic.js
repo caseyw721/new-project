@@ -63,6 +63,20 @@ window.Synth = (() => {
       body: { A: ['Participation percentage. Reserve account. Chargeback schedule.', LOREM[2], LOREM[3]], B: ['Reserve account terms. Participation. Chargebacks.', LOREM[1]] }, table: true, checkboxes: 3 },
   };
 
+  /* Each form gets its own stable geometry (logo side, title size, table
+   * position/shape, checkbox grid, signature rows), like real forms from
+   * different vendors. Revisions of a form keep its geometry.
+   */
+  function geometry(key) {
+    let h = 7; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const pick = (n) => { h = (h * 1103515245 + 12345) >>> 0; return h % n; };
+    return { logoRight: pick(2) === 1, titleSize: [11, 13, 15][pick(3)], bodyTop: 690 - pick(4) * 12, bodyWidth: [80, 95, 110][pick(3)],
+             tableTop: 380 + pick(6) * 22, tableRows: 3 + pick(5), tableCols: 2 + pick(4), tableX: 36 + pick(3) * 30, tableW: 420 + pick(4) * 39,
+             cbCols: 3 + pick(4), cbX: 40 + pick(3) * 20, cbY: 230 + pick(4) * 15, sigRows: 1 + pick(3), sigY: 100 + pick(4) * 12, sigW: 200 + pick(3) * 60,
+             twoCol: pick(3) === 0, rule: pick(2) === 1 };
+  }
+  for (const k of Object.keys(FORMS)) FORMS[k].geo = geometry(k);
+
   const NAMES = [['GARCIA', 'MARIA'], ['NGUYEN', 'DAVID'], ['OKAFOR', 'CHIDI'], ['SMITH', 'JOHN'], ['PATEL', 'ANITA'], ['KOWALSKI', 'ANNA'], ['BROWN', 'TYLER'], ['ROSSI', 'LUCA'], ['KIM', 'SOO'], ['HERNANDEZ', 'LUIS']];
 
   /* ---- drawing one clean page with pdf-lib ---- */
@@ -71,12 +85,16 @@ window.Synth = (() => {
     const { bold, reg, mono } = fonts;
     const rgb = window.PDFLib.rgb;
     // logo box + dealer name (header left), title (center), form id top-right in rev B
-    page.drawRectangle({ x: 36, y: 730, width: 110, height: 34, borderWidth: 1.5, borderColor: rgb(0, 0, 0) });
-    page.drawText('NORTHSTAR AUTO GROUP', { x: 41, y: 743, size: 8, font: bold });
-    page.drawText(form.title, { x: 160, y: 745, size: form.title.length > 34 ? 11 : 14, font: bold });
-    if (rev === 'B') page.drawText(`Form ${form.formId}`, { x: 500, y: 745, size: 8, font: mono });
+    const g = form.geo;
+    const logoX = g.logoRight ? 466 : 36;
+    page.drawRectangle({ x: logoX, y: 730, width: 110, height: 34, borderWidth: 1.5, borderColor: rgb(0, 0, 0) });
+    page.drawText('NORTHSTAR AUTO GROUP', { x: logoX + 5, y: 743, size: 8, font: bold });
+    const ts = form.title.length > 34 ? Math.min(g.titleSize, 11) : g.titleSize;
+    page.drawText(form.title, { x: g.logoRight ? 36 : 160, y: 745, size: ts, font: bold });
+    if (rev === 'B') page.drawText(`Form ${form.formId}`, { x: g.logoRight ? 36 : 500, y: 728, size: 8, font: mono });
+    if (g.rule) page.drawLine({ start: { x: 36, y: 722 }, end: { x: 576, y: 722 }, thickness: 1.2 });
     // vehicle / buyer block
-    const y0 = 700;
+    const y0 = g.bodyTop;
     const vinTxt = opts.vinText || deal.vin;
     page.drawText(`BUYER: ${deal.last}, ${deal.first}     DATE: 03/1${pageNo}/2026`, { x: 36, y: y0, size: 9, font: reg });
     page.drawText(`VIN: ${vinTxt}   YEAR/MAKE/MODEL: 2025 ${deal.make}   STOCK: S${deal.stock}`, { x: 36, y: y0 - 14, size: 9, font: reg });
@@ -88,30 +106,33 @@ window.Synth = (() => {
       const p = paras[(startAt + i) % paras.length];
       const words = p.split(' ');
       let line = '';
+      const bx = g.twoCol && i % 2 ? 320 : 36;
+      if (g.twoCol && i % 2) y += 32 + 12 * Math.ceil(paras[(startAt + i - 1) % paras.length].length / g.bodyWidth);
       for (const w of words) {
-        if ((line + ' ' + w).length > 95) { page.drawText(line, { x: 36, y, size: 9, font: reg }); y -= 12; line = w; } else line = line ? line + ' ' + w : w;
+        if ((line + ' ' + w).length > (g.twoCol ? 48 : g.bodyWidth)) { page.drawText(line, { x: bx, y, size: 9, font: reg }); y -= 12; line = w; } else line = line ? line + ' ' + w : w;
       }
-      page.drawText(line, { x: 36, y, size: 9, font: reg }); y -= 20;
+      page.drawText(line, { x: bx, y, size: 9, font: reg }); y -= 20;
+      if (y < g.tableTop + 30) break;
     }
     // table grid
     if (form.table) {
-      const top = rev === 'A' ? 420 : 400, rows = 5, cols = 4;
-      for (let r = 0; r <= rows; r++) page.drawLine({ start: { x: 36, y: top - r * 22 }, end: { x: 576, y: top - r * 22 }, thickness: 0.8 });
-      for (let c = 0; c <= cols; c++) page.drawLine({ start: { x: 36 + c * 135, y: top }, end: { x: 36 + c * 135, y: top - rows * 22 }, thickness: 0.8 });
-      for (let r = 0; r < rows; r++) page.drawText(`Item ${r + 1}`, { x: 40, y: top - r * 22 - 15, size: 8, font: reg });
+      const top = g.tableTop, rows = g.tableRows, cols = g.tableCols, cw = g.tableW / cols;
+      for (let r = 0; r <= rows; r++) page.drawLine({ start: { x: g.tableX, y: top - r * 22 }, end: { x: g.tableX + g.tableW, y: top - r * 22 }, thickness: 0.8 });
+      for (let c = 0; c <= cols; c++) page.drawLine({ start: { x: g.tableX + c * cw, y: top }, end: { x: g.tableX + c * cw, y: top - rows * 22 }, thickness: 0.8 });
+      for (let r = 0; r < rows; r++) page.drawText(`Item ${r + 1}`, { x: g.tableX + 4, y: top - r * 22 - 15, size: 8, font: reg });
     }
     // checkboxes
     for (let i = 0; i < form.checkboxes; i++) {
-      page.drawRectangle({ x: 40 + (i % 5) * 100, y: 250 - Math.floor(i / 5) * 18, width: 9, height: 9, borderWidth: 0.9, borderColor: rgb(0, 0, 0) });
-      page.drawText(pick(['Yes', 'No', 'N/A', 'Initial']), { x: 53 + (i % 5) * 100, y: 251 - Math.floor(i / 5) * 18, size: 8, font: reg });
+      page.drawRectangle({ x: g.cbX + (i % g.cbCols) * 100, y: g.cbY - Math.floor(i / g.cbCols) * 18, width: 9, height: 9, borderWidth: 0.9, borderColor: rgb(0, 0, 0) });
+      page.drawText(pick(['Yes', 'No', 'N/A', 'Initial']), { x: g.cbX + 13 + (i % g.cbCols) * 100, y: g.cbY + 1 - Math.floor(i / g.cbCols) * 18, size: 8, font: reg });
     }
     // signature lines
-    for (let i = 0; i < 3; i++) {
-      const sy = 120 - i * 26;
-      page.drawLine({ start: { x: 36, y: sy }, end: { x: 300, y: sy }, thickness: 0.6 });
+    for (let i = 0; i < g.sigRows; i++) {
+      const sy = g.sigY - i * 26;
+      page.drawLine({ start: { x: 36, y: sy }, end: { x: 36 + g.sigW, y: sy }, thickness: 0.6 });
       page.drawText(['Buyer Signature', 'Co-Buyer Signature', 'Dealer Representative'][i], { x: 36, y: sy - 10, size: 7, font: reg });
-      page.drawLine({ start: { x: 340, y: sy }, end: { x: 480, y: sy }, thickness: 0.6 });
-      page.drawText('Date', { x: 340, y: sy - 10, size: 7, font: reg });
+      page.drawLine({ start: { x: 76 + g.sigW, y: sy }, end: { x: 216 + g.sigW, y: sy }, thickness: 0.6 });
+      page.drawText('Date', { x: 76 + g.sigW, y: sy - 10, size: 7, font: reg });
     }
     // footer: form id (+ rev) and page n of N
     page.drawText(`${form.formId}  Rev ${rev === 'A' ? '01/2024' : '03/2026'}`, { x: 36, y: 30, size: 8, font: mono });
@@ -228,7 +249,7 @@ window.Synth = (() => {
   function acceptanceSpec() {
     const items = [];
     const deals = [];
-    const kinds = ['RETAIL', 'LEASE', 'CASH', 'RETAIL', 'LEASE', 'RETAIL', 'CASH', 'RETAIL'];
+    const kinds = ['RETAIL', 'LEASE', 'CASH', 'RETAIL', 'LEASE', 'RETAIL', 'CASH', 'RETAIL', 'LEASE', 'RETAIL', 'RETAIL'];
     const variants = ['clean', 'noisy', 'fax'];
     kinds.forEach((kind, di) => {
       deals.push({ kind, corrupt: di < 3 });
@@ -236,7 +257,7 @@ window.Synth = (() => {
       if (kind === 'RETAIL') add('RISC'); else if (kind === 'LEASE') add('LEASE');
       add('BUYERS_ORDER'); add('ODOMETER'); add('TITLE_APP'); add('PRIVACY');
       if (kind !== 'CASH') { add('CREDIT_APP'); add('INSURANCE'); }
-      if (di % 2 === 0) add('GAP'); if (di % 3 === 0) add('VSC'); if (di % 2 === 1) add('TRADE_APPRAISAL');
+      if (kind !== 'CASH') { add('GAP'); add('VSC'); } if (di % 3 !== 2) add('TRADE_APPRAISAL');
     });
     // text-layer traps: 4 pages with garbage text layers
     items.push({ deal: 0, form: 'ODOMETER', rev: 'A', variant: 'trap', id: 't1' }, { deal: 1, form: 'PRIVACY', rev: 'B', variant: 'trap', id: 't2' },
