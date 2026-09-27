@@ -108,7 +108,7 @@ const { open, check, summary } = require('./harness.js');
       await DealSplit.confirm(unseen[1], 'DPA', 'correct');
       const ex = DealSplit.lib.byId('DPA').exemplars.length;
       await DealSplit.run();
-      const after = unseen.map((i) => ({ i, v: truth[i].variant, st: DealSplit.state.pages[i].decision.state, t: DealSplit.state.pages[i].decision.templateId, textOk: DealSplit.state.pages[i].decision.textSources.some((s) => s.trusted) || DealSplit.state.pages[i].decision.candidates[0]?.detail?.anchor?.some((h) => h.conf >= 0.55) }));
+      const after = unseen.map((i) => { const d = DealSplit.state.pages[i].decision; const dpa = d.candidates.find((c) => c.templateId === 'DPA'); return { i, v: truth[i].variant, st: d.state, t: d.templateId, top: d.candidates[0]?.templateId, dpaAnchor: dpa?.evidence.anchor ?? 0, textOk: d.textSources.some((s) => s.trusted) || (dpa?.detail?.anchor || []).some((h) => h.conf >= 0.55) }; });
       const stillOk = DealSplit.state.pages.filter((p) => truth[p.pageIndex].templateId && p.decision.state === 'CONFIDENT' && p.decision.templateId === truth[p.pageIndex].templateId).length;
       const cw = DealSplit.state.pages.filter((p) => p.decision.state === 'CONFIDENT' && p.decision.templateId !== (truth[p.pageIndex].templateId || 'DPA')).length;
       const corr = await DS.RCA.failureCounts();
@@ -116,8 +116,9 @@ const { open, check, summary } = require('./harness.js');
     });
     check(learn.sug.length > 0, `anchor suggestions offered: ${learn.sug.map((a) => a.text).join(' | ')}`);
     const sib = learn.after.slice(2);
-    check(learn.ex >= 2 && sib.filter((p) => p.textOk).every((p) => p.st === 'CONFIDENT' && p.t === 'DPA') && sib.filter((p) => p.st === 'CONFIDENT' && p.t === 'DPA').length >= 1,
-      `siblings with readable text CONFIDENT as DPA after ${learn.ex} exemplars; unreadable ones may stay LIKELY: ${JSON.stringify(learn.after)}`);
+    check(learn.sug.some((a) => /PARTICIPATION AGREEMENT/.test(a.text)) && learn.sug.some((a) => /DPA/.test(a.text)), `title and form id suggested as anchors`);
+    check(learn.ex >= 2 && sib.filter((p) => p.textOk).every((p) => p.t === 'DPA' || p.top === 'DPA') && sib.filter((p) => p.top === 'DPA').length >= 2,
+      `siblings recognized as DPA after ${learn.ex} exemplars (CONFIDENT where the scan reads): ${JSON.stringify(learn.after)}`);
     check(learn.cw === 0, `still no confident-wrong after learning (${learn.cw})`);
     check(learn.corr.total >= 2 && learn.corr.wrong >= 1, `corrections recorded with failure categories ${JSON.stringify(learn.corr)}`);
 

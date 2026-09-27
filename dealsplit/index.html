@@ -2278,9 +2278,11 @@ DS.App = (() => {
     await lib.save();
     return confirm(pageIndex, id, 'new-type');
   }
-  /* Candidate anchors for a new template: distinctive header/footer phrases
-   * made only of words the source is sure about and that look like words or
-   * form ids (no OCR glyph soup).
+  /* Candidate anchors for a new template.
+   *  - header: runs of confidently read words; the longest run is usually the
+   *    title. Runs containing digits are deal-specific (dates, stock numbers,
+   *    vehicle) and are skipped.
+   *  - footer: form ids (letters+digits, e.g. "RO-553-CA"): the strongest anchors.
    */
   function suggestAnchors(features) {
     const box = features.fingerprint?.contentBox;
@@ -2289,29 +2291,47 @@ DS.App = (() => {
     if (features.textLayer && features.textLayer.quality.score >= lib.settings.thresholds.textQualityMin) sources.push(features.textLayer.words.map((w) => ({ ...w, conf: 1 })));
     for (const k of ['ocrHeader', 'ocrFooter', 'ocrFull']) if (features[k]) sources.push(features[k].words);
     const out = [];
+    const seenText = new Set();
+    const add = (text, zone, weight, fuzzy) => { if (!seenText.has(text)) { seenText.add(text); out.push({ text, zone, weight, fuzzy }); } };
     for (const words of sources) {
       const zones = { header: [], footer: [] };
       for (const w of words) {
         const z = R.zoneOf(w, box);
         if (z === 'body') continue;
         const t = DS.Infra.normText(w.text);
-        const good = w.conf >= 0.75 && t.length >= 2 && (plaus(w.text) >= 1 || /^\d+$/.test(t));
-        zones[z].push(good ? t : null);
+        if (!t) continue;
+        for (const tok of t.split(' ')) zones[z].push({ tok, ok: w.conf >= 0.75 && (plaus(w.text) >= 1 || /^(OF|OR|AND|FOR|TO|IN|BY)$/.test(tok)) });
       }
+      // header: runs
+      const runs = [];
+      let run = [];
+      for (const { tok, ok } of zones.header) { if (ok) run.push(tok); else { if (run.length) runs.push(run); run = []; } }
+      if (run.length) runs.push(run);
+      const wordRuns = runs.filter((r) => r.length >= 2 && !r.some((t) => /\d/.test(t)) && r.filter((t) => t.length >= 3).length >= 2)
+        .map((r) => r.slice(0, 6)).sort((a, b) => b.join(' ').length - a.join(' ').length);
+      wordRuns.forEach((r, i) => add(r.join(' '), 'header', i === 0 ? 3 : 2, 0.85));
+      // header + footer: form ids
       for (const zone of ['header', 'footer']) {
-        const seq = zones[zone];
-        for (let i = 0; i < seq.length && out.length < 10; i++) {
-          if (!seq[i]) continue;
-          const run = []; while (i < seq.length && seq[i] && run.length < 3) run.push(seq[i++]);
-          if (!run.some((t) => /^[A-Z]{3,}/.test(t))) continue;          // needs a real word
-          const phrase = run.join(' ');
-          // A form id: letters plus digits ("RO-553-CA", "DPA 41"). Strongest anchor.
-          const isId = /[A-Z]/.test(phrase) && /\d/.test(phrase) && run.length <= 3;
-          if ((run.length >= 2 || isId) && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: isId ? 4 : 2, fuzzy: isId ? 0.8 : 0.85 });
+        const toks = zones[zone];
+        for (let i = 0; i < toks.length; i++) {
+          if (!toks[i].ok) continue;
+          const t = toks[i].tok;
+          const isId = /[A-Z]/.test(t) && /\d/.test(t) && t.length >= 4 && !/^\d{4}$/.test(t);
+          if (!isId) continue;
+          // "RO 553 CA" style ids were split by normalization: rejoin with neighbours that are short id parts
+          let phrase = t;
+          if (i + 1 < toks.length && toks[i + 1].ok && /^[A-Z0-9]{1,4}$/.test(toks[i + 1].tok) && !/^(REV|PAGE|OF)$/.test(toks[i + 1].tok)) phrase += ' ' + toks[i + 1].tok;
+          if (i > 0 && toks[i - 1].ok && /^[A-Z]{2,4}$/.test(toks[i - 1].tok) && !/^(REV|PAGE|OF|FORM)$/.test(toks[i - 1].tok)) phrase = toks[i - 1].tok + ' ' + phrase;
+          add(phrase, zone, 4, 0.8);
+        }
+        // ids split as "DPA 41": a short all-caps token followed by a number
+        for (let i = 0; i + 1 < toks.length; i++) {
+          if (toks[i].ok && toks[i + 1].ok && /^[A-Z]{2,5}$/.test(toks[i].tok) && /^\d{1,5}$/.test(toks[i + 1].tok) && !/^(PAGE|REV|OF)$/.test(toks[i].tok) && !/^(19|20)\d\d$/.test(toks[i + 1].tok)) add(toks[i].tok + ' ' + toks[i + 1].tok, zone, 4, 0.8);
         }
       }
+      if (out.length >= 3) break; // the best source is enough
     }
-    return out;
+    return out.slice(0, 8);
   }
 
   /* ---------- writing ---------- */
