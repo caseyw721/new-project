@@ -803,7 +803,14 @@ DS.Perception = (() => {
    */
   function prepareForOcr(canvas, skewDeg) {
     const t0 = now();
-    let g = median3(grayscale(canvas));
+    const raw = grayscale(canvas);
+    let g = median3(raw);
+    // Heavy salt-and-pepper leaves 2-pixel clumps after one pass; measure how
+    // much the filter changed and run a second pass when it was a lot.
+    let changed = 0;
+    for (let i = 0; i < raw.data.length; i += 7) if (Math.abs(raw.data[i] - g.data[i]) > 90) changed++;
+    const noise = changed / (raw.data.length / 7);
+    if (noise > 0.02) g = median3(g);
     if (Math.abs(skewDeg || 0) >= 0.3) g = rotateGray(g, skewDeg);
     const bin = sauvola(g, 51, 0.25);
     const out = makeCanvas(g.w, g.h);
@@ -812,7 +819,7 @@ DS.Perception = (() => {
     const d = img.data;
     for (let i = 0, j = 0; i < bin.length; i++, j += 4) { const v = bin[i] ? 0 : 255; d[j] = v; d[j + 1] = v; d[j + 2] = v; d[j + 3] = 255; }
     ctx.putImageData(img, 0, 0);
-    return { canvas: out, ms: round(now() - t0, 1) };
+    return { canvas: out, noise: round(noise, 3), ms: round(now() - t0, 1) };
   }
 
   /* Header/footer strips (in canvas px) for strip-first OCR. */
@@ -1471,33 +1478,48 @@ DS.Policy = (() => {
     const m = /PAGE (\d+) OF (\d+)/.exec(txt);
     return m ? { n: +m[1], of: +m[2] } : null;
   }
-  /* Group consecutive pages into documents. */
+  /* Best readable VIN on a page (text layer preferred), or null. */
+  function pageVin(p) {
+    const v = (p.vins || []).filter((x) => x.valid);
+    if (!v.length) return null;
+    v.sort((a, b) => (b.source === 'textLayer') - (a.source === 'textLayer') || b.confidence - a.confidence);
+    return v[0].vin;
+  }
+  /* Group consecutive pages into documents. A new document starts when the
+   * family changes, a "page 1" marker appears, the continuation sequence
+   * breaks, the page count exceeds the template's maximum, or the page carries
+   * a different VIN than the document so far (same form, another deal).
+   */
   function segment(pages) {
-    // pages: [{pageIndex, decision, features, dup}]
+    // pages: [{pageIndex, decision, features, vins, dup}]
     const docs = [];
     let cur = null;
     for (const p of pages) {
       const d = p.decision;
       const fam = d.family || 'UNKNOWN';
       const cont = continuationInfo(p.features);
+      const vin = pageVin(p);
       let start = !cur;
       if (cur) {
         const prevFam = cur.family;
         if (fam !== prevFam) start = true;
         else if (cont && cont.n === 1) start = true;
         else if (cont && cur.lastCont && cont.n !== cur.lastCont.n + 1) start = true;
+        else if (!cont && cur.lastCont && cur.lastCont.n < cur.lastCont.of) start = false;   // unreadable marker mid-run: keep
         else if (cur.pages.length >= (cur.expectedMax || 8)) start = true;
         else if (fam === 'UNKNOWN') start = true;              // never merge unknown pages
-        else if (!cont && cur.headerHash && p.features.fingerprint && hamming64(cur.headerHash, p.features.fingerprint.regionHashes[1]) <= 6 && cur.pages.length >= 1 && (cur.expectedMax || 1) === 1) start = true;
+        else if (vin && cur.vin && vin !== cur.vin) start = true;
+        else if (!cont && (cur.expectedMax || 1) === 1) start = true;
       }
       if (start) {
-        cur = { id: docs.length + 1, family: fam, templateId: d.templateId, pages: [], lastCont: null,
+        cur = { id: docs.length + 1, family: fam, templateId: d.templateId, pages: [], lastCont: null, vin: null,
                 headerHash: p.features.fingerprint?.regionHashes?.[1] || null, expectedMax: p.expectedMax, states: new Set() };
         docs.push(cur);
       }
       cur.pages.push(p);
       cur.states.add(d.state);
       cur.lastCont = cont;
+      if (vin && !cur.vin) cur.vin = vin;
     }
     for (const doc of docs) {
       doc.state = doc.states.has('UNKNOWN') ? 'UNKNOWN' : doc.states.has('LIKELY') ? 'LIKELY' : 'CONFIDENT';
@@ -1552,14 +1574,13 @@ DS.Policy = (() => {
       for (let j = i + 1; j < vins.length; j++) if (!merged.has(vins[j]) && ham(vins[i], vins[j]) <= 2) merged.set(vins[j], vins[i]);
     }
     for (const doc of docs) if (doc.vin && merged.has(doc.vin)) { doc.vinMergedFrom = doc.vin; doc.vin = merged.get(doc.vin); }
-    // 2. Propagate along contiguous runs: a doc without a VIN takes the VIN of
-    //    its neighbours when both neighbours agree, or the previous when the
-    //    next has none.
+    // 2. Propagate along contiguous runs, conservatively: a doc without a
+    //    readable VIN takes its neighbours' VIN only when both neighbours
+    //    agree. A mis-grouped deal is worse than a document left for review.
     for (let i = 0; i < docs.length; i++) {
       if (docs[i].vin) continue;
       const prev = docs[i - 1]?.vin, next = docs[i + 1]?.vin;
-      if (prev && (!next || next === prev)) { docs[i].vin = prev; docs[i].vinPropagated = 'previous'; }
-      else if (next && !prev) { docs[i].vin = next; docs[i].vinPropagated = 'next'; }
+      if (prev && next && prev === next) { docs[i].vin = prev; docs[i].vinPropagated = 'neighbours'; }
     }
     // 3. Group.
     const deals = new Map();

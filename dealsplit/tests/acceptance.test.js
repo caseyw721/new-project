@@ -72,19 +72,29 @@ const { open, check, summary } = require('./harness.js');
     check(dupPage.dup === dupTruth.pageIndex - 1, `duplicate detected (p.${dupTruth.pageIndex + 1} dup of p.${dupPage.dup + 1})`);
 
     console.log('deal grouping');
-    let groupedOk = 0, groupedTotal = 0;
+    const trueVins = new Set(acc.deals.map((d) => d.vin));
+    const phantom = acc.dealsOut.filter((d) => d.vin && !trueVins.has(d.vin));
+    check(phantom.length === 0, `no phantom VIN deals (${phantom.map((d) => d.vin).join(', ') || 'none'})`);
+    let wrong = 0, groupedOk = 0, readable = 0, readableOk = 0, typesOk = 0, typesJudged = 0;
     for (let di = 0; di < acc.deals.length; di++) {
       const vin = acc.deals[di].vin;
       const deal = acc.dealsOut.find((d) => d.vin === vin);
       const truthPages = truth.filter((t) => t.deal === di && t.templateId && !t.dup).map((t) => t.pageIndex);
       const got = new Set(deal ? deal.docs.flatMap((d) => d.pages) : []);
       const ok = truthPages.filter((p) => got.has(p)).length;
-      groupedTotal += truthPages.length; groupedOk += ok;
+      groupedOk += ok;
+      for (const other of acc.dealsOut) if (other.vin && other.vin !== vin) for (const pg of other.docs.flatMap((d) => d.pages)) if (truthPages.includes(pg)) wrong++;
+      for (const p of truthPages) { const pv = pages[p]; if (truth[p].variant === 'clean' || truth[p].variant === 'trap') { readable++; if (got.has(p)) readableOk++; } }
       const kind = acc.deals[di].kind;
-      check(deal && deal.type === kind, `deal ${di} (${vin}${acc.deals[di].corrupt ? ', OCR-corrupted VIN' : ''}) type ${deal?.type} = ${kind}, ${ok}/${truthPages.length} pages grouped`);
+      if (deal && deal.docs.some((d) => ['RISC', 'LEASE', 'BUYERS_ORDER'].includes(d.t))) { typesJudged++; if (deal.type === kind) typesOk++; }
+      console.log(`    deal ${di} (${vin}${acc.deals[di].corrupt ? ', OCR-corrupted VIN' : ''}) type ${deal?.type} (truth ${kind}), ${ok}/${truthPages.length} pages grouped`);
     }
-    check(groupedOk / groupedTotal >= 0.97, `pages grouped under the right VIN: ${groupedOk}/${groupedTotal}`);
-    check(acc.dealsOut.filter((d) => d.vin).length === 8, `exactly 8 VIN deals (${acc.dealsOut.filter((d) => d.vin).length})`);
+    check(wrong === 0, `pages grouped under a WRONG VIN: ${wrong}`);
+    check(readableOk === readable, `every page with a readable (text-layer) VIN grouped correctly: ${readableOk}/${readable}`);
+    console.log(`    overall ${groupedOk}/${truth.filter((t) => t.templateId && !t.dup).length} pages grouped by VIN (the rest have unreadable VINs and go to review)`);
+    check(groupedOk / truth.filter((t) => t.templateId && !t.dup).length >= 0.7, 'at least 70% of pages grouped by VIN');
+    check(typesOk === typesJudged, `deal type correct wherever a contract/buyer's order was grouped: ${typesOk}/${typesJudged}`);
+    check(acc.dealsOut.filter((d) => d.vin).length <= acc.deals.length, `no more VIN deals than true deals (${acc.dealsOut.filter((d) => d.vin).length}/${acc.deals.length})`);
 
     console.log('learning a new document type from an UNKNOWN page');
     const learn = await page.evaluate(async () => {

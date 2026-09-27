@@ -544,7 +544,14 @@ DS.Perception = (() => {
    */
   function prepareForOcr(canvas, skewDeg) {
     const t0 = now();
-    let g = median3(grayscale(canvas));
+    const raw = grayscale(canvas);
+    let g = median3(raw);
+    // Heavy salt-and-pepper leaves 2-pixel clumps after one pass; measure how
+    // much the filter changed and run a second pass when it was a lot.
+    let changed = 0;
+    for (let i = 0; i < raw.data.length; i += 7) if (Math.abs(raw.data[i] - g.data[i]) > 90) changed++;
+    const noise = changed / (raw.data.length / 7);
+    if (noise > 0.02) g = median3(g);
     if (Math.abs(skewDeg || 0) >= 0.3) g = rotateGray(g, skewDeg);
     const bin = sauvola(g, 51, 0.25);
     const out = makeCanvas(g.w, g.h);
@@ -553,7 +560,7 @@ DS.Perception = (() => {
     const d = img.data;
     for (let i = 0, j = 0; i < bin.length; i++, j += 4) { const v = bin[i] ? 0 : 255; d[j] = v; d[j + 1] = v; d[j + 2] = v; d[j + 3] = 255; }
     ctx.putImageData(img, 0, 0);
-    return { canvas: out, ms: round(now() - t0, 1) };
+    return { canvas: out, noise: round(noise, 3), ms: round(now() - t0, 1) };
   }
 
   /* Header/footer strips (in canvas px) for strip-first OCR. */
