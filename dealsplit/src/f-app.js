@@ -285,8 +285,11 @@ DS.App = (() => {
         for (let i = 0; i < toks.length; i++) {
           if (!toks[i].ok) continue;
           const t = toks[i].tok;
-          const isId = /[A-Z]/.test(t) && /\d/.test(t) && t.length >= 4 && !/^\d{4}$/.test(t);
+          // Form ids are short ("RO553CA", "DPA41"): VIN-length tokens, stock
+          // numbers and anything with a long digit run are deal-specific.
+          const isId = /[A-Z]/.test(t) && /\d/.test(t) && t.length >= 4 && t.length <= 10 && !/^\d{4}$/.test(t) && !/\d{4,}/.test(t);
           if (!isId) continue;
+          if (i > 0 && /^(VIN|STOCK|STK|NO|ACCOUNT|ACCT|LICENSE|PLATE|DL|SSN|ID)$/.test(toks[i - 1].tok)) continue;
           // "RO 553 CA" style ids were split by normalization: rejoin with neighbours that are short id parts
           let phrase = t;
           if (i + 1 < toks.length && toks[i + 1].ok && /^[A-Z0-9]{1,4}$/.test(toks[i + 1].tok) && !/^(REV|PAGE|OF)$/.test(toks[i + 1].tok)) phrase += ' ' + toks[i + 1].tok;

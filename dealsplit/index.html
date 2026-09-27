@@ -722,6 +722,17 @@ DS.Perception = (() => {
   const textHash = (text) => fnv1a64(normText(text));
 
   /* ---------- OCR pool ---------- */
+  /* tesseract.js's `rectangle` option returns garbage for canvas input (verified:
+   * the same page reads cleanly when cropped first), so every region is cut
+   * into its own canvas and word boxes are shifted back afterwards. */
+  function cropFor(canvas, rect) {
+    if (!rect) return { src: canvas, ox: 0, oy: 0 };
+    const left = Math.max(0, Math.floor(rect.left)), top = Math.max(0, Math.floor(rect.top));
+    const width = Math.min(canvas.width - left, Math.ceil(rect.width)), height = Math.min(canvas.height - top, Math.ceil(rect.height));
+    const c = makeCanvas(Math.max(1, width), Math.max(1, height));
+    c.getContext('2d', { willReadFrequently: true }).drawImage(canvas, left, top, width, height, 0, 0, width, height);
+    return { src: c, ox: left, oy: top };
+  }
   const ocrPool = {
     scheduler: null, workers: [], size: 0, ready: null, cfg: {}, stats: { jobs: 0, ms: 0, cacheHits: 0 },
     configure(cfg) { this.cfg = { ...this.cfg, ...cfg }; },
@@ -753,8 +764,8 @@ DS.Perception = (() => {
       }
       await this.init(this.size || 1);
       const t0 = now();
-      const opts = rect ? { rectangle: rect } : {};
-      const { data } = await this.scheduler.addJob('recognize', canvas, opts);
+      const { src, ox, oy } = cropFor(canvas, rect);
+      const { data } = await this.scheduler.addJob('recognize', src, {});
       const W = canvas.width, H = canvas.height;
       const words = [];
       let confSum = 0;
@@ -762,7 +773,7 @@ DS.Perception = (() => {
         if (!w.text || !w.text.trim()) continue;
         const b = w.bbox;
         words.push({ text: w.text, conf: round(w.confidence / 100, 3),
-          x: round(b.x0 / W, 4), y: round(b.y0 / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
+          x: round((b.x0 + ox) / W, 4), y: round((b.y0 + oy) / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
         confSum += w.confidence / 100;
       }
       const res = { words, meanConf: words.length ? round(confSum / words.length) : 0,
@@ -786,14 +797,15 @@ DS.Perception = (() => {
       }
       await this.vinReady;
       const t0 = now();
-      const { data } = await this.vinWorker.recognize(canvas, { rectangle: rect });
+      const { src, ox, oy } = cropFor(canvas, rect);
+      const { data } = await this.vinWorker.recognize(src, {});
       const W = canvas.width, H = canvas.height;
       const words = [];
       let confSum = 0;
       for (const w of data.words || []) {
         if (!w.text || !w.text.trim()) continue;
         const b = w.bbox;
-        words.push({ text: w.text, conf: round(w.confidence / 100, 3), x: round(b.x0 / W, 4), y: round(b.y0 / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
+        words.push({ text: w.text, conf: round(w.confidence / 100, 3), x: round((b.x0 + ox) / W, 4), y: round((b.y0 + oy) / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
         confSum += w.confidence / 100;
       }
       const res = { words, meanConf: words.length ? round(confSum / words.length) : 0, text: normText(words.map((w) => w.text).join(' ')), ms: round(now() - t0, 1), vinMode: true };
