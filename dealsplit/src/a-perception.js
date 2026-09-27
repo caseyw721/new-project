@@ -518,6 +518,44 @@ DS.Perception = (() => {
     },
   };
 
+  /* 3×3 median filter: removes salt-and-pepper noise and fax speckle, which
+   * otherwise makes tesseract both slow and wrong.
+   */
+  function median3(gray) {
+    const { w, h, data } = gray;
+    const out = new Uint8Array(w * h);
+    const win = new Uint8Array(9);
+    for (let y = 0; y < h; y++) {
+      const y0 = y > 0 ? y - 1 : y, y1 = y < h - 1 ? y + 1 : y;
+      for (let x = 0; x < w; x++) {
+        const x0 = x > 0 ? x - 1 : x, x1 = x < w - 1 ? x + 1 : x;
+        let n = 0;
+        for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) win[n++] = data[yy * w + xx];
+        // partial insertion sort to the median
+        for (let i = 1; i < n; i++) { const v = win[i]; let j = i - 1; while (j >= 0 && win[j] > v) { win[j + 1] = win[j]; j--; } win[j + 1] = v; }
+        out[y * w + x] = win[n >> 1];
+      }
+    }
+    return { w, h, data: out };
+  }
+
+  /* Clean image for OCR: denoise, deskew (angle from the 72-dpi pass), Sauvola
+   * binarize. Returns a new black-on-white canvas of the same size.
+   */
+  function prepareForOcr(canvas, skewDeg) {
+    const t0 = now();
+    let g = median3(grayscale(canvas));
+    if (Math.abs(skewDeg || 0) >= 0.3) g = rotateGray(g, skewDeg);
+    const bin = sauvola(g, 51, 0.25);
+    const out = makeCanvas(g.w, g.h);
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    const img = ctx.createImageData(g.w, g.h);
+    const d = img.data;
+    for (let i = 0, j = 0; i < bin.length; i++, j += 4) { const v = bin[i] ? 0 : 255; d[j] = v; d[j + 1] = v; d[j + 2] = v; d[j + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    return { canvas: out, ms: round(now() - t0, 1) };
+  }
+
   /* Header/footer strips (in canvas px) for strip-first OCR. */
   function strips(canvas, contentBox) {
     const W = canvas.width, H = canvas.height;
@@ -530,5 +568,5 @@ DS.Perception = (() => {
   }
 
   return { renderPage, grayscale, extractTextLayer, preprocess, fingerprint, lineSigSim, pageHash, textHash,
-           ocrPool, strips, makeCanvas, _internal: { otsu, sauvola, estimateSkew, rotateGray, phashOf, resample, tokenPlausible } };
+           ocrPool, strips, makeCanvas, prepareForOcr, median3, _internal: { otsu, sauvola, estimateSkew, rotateGray, phashOf, resample, tokenPlausible } };
 })();

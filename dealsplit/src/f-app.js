@@ -61,7 +61,17 @@ DS.App = (() => {
     const page = await state.pdf.getPage(pageIndex + 1);
     let r72 = null, r150 = null, gray = null;
     const features = { pageIndex, quality: {} };
-    const render150 = async () => { if (!r150) r150 = await P.renderPage(page, 150); return r150; };
+    // OCR runs on a cleaned image (denoised, deskewed, binarized); tesseract is
+    // several times faster and more accurate on it than on a noisy scan.
+    const render150 = async () => {
+      if (!r150) {
+        const raw = await P.renderPage(page, 150);
+        const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
+        r150 = { canvas: prep.canvas, ms: raw.ms, prepMs: prep.ms };
+        features.timing = { ...(features.timing || {}), render150: round(raw.ms, 1), ocrPrep: prep.ms };
+      }
+      return r150;
+    };
     const setTextHash = () => {
       const tl = features.textLayer, ok = tl && tl.quality.score >= lib.settings.thresholds.textQualityMin;
       const txt = ok ? tl.text : (features.ocrFull?.text || features.ocrHeader?.text || '');
