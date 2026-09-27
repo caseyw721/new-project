@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DealSplit</title>
+<meta name="description" content="Browser-only splitter and classifier for dealership finance paperwork. Nothing leaves the browser.">
+<style>
+  :root { --bg:#f5f6f8; --panel:#fff; --ink:#1b2130; --muted:#5f6878; --line:#dcdfe6; --accent:#2b62d9; --accent-ink:#fff;
+          --ok:#1d8348; --warn:#b26a00; --bad:#c0392b; --field:#eef0f4; --hl:#fff6d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121419; --panel:#1a1e26; --ink:#e6e9ef; --muted:#98a1b2; --line:#2a303c; --accent:#5b8dff; --accent-ink:#0b1020;
+          --ok:#4cc37c; --warn:#e6b04d; --bad:#ff7b6b; --field:#232936; --hl:#3a3520; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0 8px 0 0; }
+  nav { display:flex; gap:2px; flex-wrap:wrap; }
+  nav button { background:none; border:0; color:var(--muted); padding:7px 11px; border-radius:8px; font:inherit; cursor:pointer; }
+  nav button.on { background:var(--field); color:var(--ink); font-weight:600; }
+  #status { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  main { max-width:1200px; margin:0 auto; padding:16px; }
+  main > section { display:none; } main > section.on { display:block; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+  .panel h2 { font-size:15px; margin:0 0 8px; } h3 { font-size:14px; margin:14px 0 6px; }
+  .muted { color:var(--muted); } .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; } .small { font-size:12px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .btn { background:var(--accent); color:var(--accent-ink); border:0; border-radius:8px; padding:7px 13px; font:inherit; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:var(--field); color:var(--ink); } .btn.small { padding:4px 9px; font-size:12px; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  input[type=text], input[type=number], select, textarea { background:var(--field); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 9px; font:inherit; }
+  textarea { width:100%; min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:26px; text-align:center; color:var(--muted); }
+  #drop.over { border-color:var(--accent); color:var(--ink); }
+  #pages { display:grid; grid-template-columns:repeat(auto-fill,minmax(124px,1fr)); gap:8px; }
+  .pg { background:var(--field); border-radius:8px; padding:6px; cursor:pointer; border:2px solid transparent; font-size:12px; }
+  .pg .th { height:150px; display:flex; align-items:center; justify-content:center; background:#fff; border-radius:4px; overflow:hidden; }
+  .pg img { max-width:100%; max-height:100%; }
+  .pg .lbl { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pg.st-CONFIDENT { border-color:var(--ok); } .pg.st-LIKELY { border-color:var(--warn); } .pg.st-UNKNOWN { border-color:var(--bad); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:8px 0; }
+  .stat { background:var(--field); border-radius:10px; padding:8px 10px; } .stat .k { font-size:12px; color:var(--muted); } .stat .v { font-size:18px; font-weight:650; }
+  table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13px; } th { color:var(--muted); }
+  tr.hl { background:var(--hl); }
+  .rv { display:grid; grid-template-columns:90px 1fr; gap:10px; padding:8px; border-left:4px solid var(--line); margin-bottom:8px; background:var(--field); border-radius:8px; }
+  .rv img { width:90px; } .rv.st-LIKELY { border-color:var(--warn); } .rv.st-UNKNOWN { border-color:var(--bad); }
+  .tpl { padding:8px 0; border-bottom:1px solid var(--line); }
+  .alarm { border:1px solid var(--warn); color:var(--warn); border-radius:10px; padding:8px 12px; margin-top:8px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:flex-start; justify-content:center; padding:24px; overflow:auto; z-index:10; }
+  .modal[hidden] { display:none; }
+  .modal .box { background:var(--panel); border-radius:12px; padding:16px; width:min(1100px,100%); }
+  .insgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .insgrid canvas { width:100%; border:1px solid var(--line); }
+  pre { background:var(--field); padding:8px; border-radius:8px; overflow:auto; font-size:12px; max-height:260px; }
+  .privacy { border:1px solid var(--ok); color:var(--ok); border-radius:10px; padding:8px 12px; }
+  label.inline { display:inline-flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DealSplit</h1>
+  <nav>
+    <button data-tab="split" class="on">Split</button>
+    <button data-tab="review">Review <span id="reviewCount"></span></button>
+    <button data-tab="templates">Templates</button>
+    <button data-tab="rca">Root cause</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="network">Privacy &amp; network</button>
+  </nav>
+  <span id="status">Loading…</span>
+</header>
+<main>
+<section id="tab-split" class="on">
+  <div class="panel">
+    <div id="drop">Drop a combined PDF here, or <label class="btn secondary small" style="display:inline-block">choose a file<input id="fileInput" type="file" accept="application/pdf" hidden></label>
+      <div class="muted small" style="margin-top:6px">Everything runs in this browser tab. The PDF is never uploaded.</div></div>
+    <div class="row"><span id="fileInfo" class="muted"></span>
+      <button class="btn" id="btnRun" disabled>Split &amp; classify</button><button class="btn secondary" id="btnCancel">Cancel</button>
+      <span style="flex:1"></span>
+      <button class="btn secondary" id="btnFolder">Choose output folder…</button><span id="folderName" class="muted">(ZIP download if none)</span>
+      <button class="btn" id="btnWrite" disabled>Write deals</button></div>
+    <div id="summary"></div>
+  </div>
+  <div class="panel"><div id="pages"></div></div>
+  <div class="panel"><div id="results"></div></div>
+  <div class="panel"><h2>Manual split</h2><div class="muted small">Ranges and names, e.g. <span class="mono">1-4 RISC, 5 Odometer, 6-7 CreditApp</span>. Writes them without classification.</div>
+    <div class="row"><input type="text" id="manualRanges" size="60" placeholder="1-4 RISC, 5 Odometer"><button class="btn secondary" id="btnManual" disabled>Write manual split</button></div></div>
+</section>
+<section id="tab-review"><div class="panel"><h2>Review queue</h2><p class="muted small">Pages the system was not sure about. Choosing a template teaches it: the page's fingerprint becomes an example for that template.</p><div id="reviewList"></div></div></section>
+<section id="tab-templates">
+  <div class="panel"><h2>Template library <span class="mono muted small">v <span id="libVersion"></span></span></h2>
+    <div class="row"><button class="btn secondary" id="btnExport">Export JSON</button><label class="btn secondary" style="display:inline-block">Import JSON<input id="importInput" type="file" accept="application/json" hidden></label><button class="btn secondary" id="btnReset">Reset to defaults</button></div>
+    <div id="tplList"></div>
+    <h3>Edit template (JSON)</h3><textarea id="tplJson" placeholder="Click “Edit JSON” on a template, or paste a new one"></textarea>
+    <div class="row"><button class="btn" id="btnTplSave">Save template</button><span class="muted small">Saving replays all confirmed pages first and warns if precision would drop.</span></div>
+    <h3>Deal types (required document families)</h3><textarea id="dealTypes"></textarea>
+    <h3>Folder layout</h3><textarea id="folders" style="min-height:70px"></textarea>
+    <div class="row"><button class="btn" id="btnDealSave">Save deal types &amp; folders</button></div></div>
+</section>
+<section id="tab-rca"><div class="panel"><h2>Root cause analysis</h2><div id="rcaBody"></div><div class="row"><button class="btn secondary" id="btnExportLog">Export redacted decision log</button><span class="muted small">Hashes, boxes, scores and anchor names only; no words from the pages.</span></div></div></section>
+<section id="tab-settings"><div class="panel"><h2>Thresholds</h2>
+  <div class="row"><label class="inline">Accept <input type="number" id="thAccept" step="0.1" style="width:80px"></label><label class="inline">Margin <input type="number" id="thMargin" step="0.1" style="width:80px"></label><label class="inline">Likely <input type="number" id="thLikely" step="0.1" style="width:80px"></label>
+    <label class="inline">Min text-layer quality <input type="number" id="thText" step="0.05" style="width:80px"></label><label class="inline">Min OCR confidence <input type="number" id="thOcr" step="0.05" style="width:80px"></label><label class="inline">Min exemplars for layout <input type="number" id="thEx" step="1" style="width:70px"></label></div>
+  <div class="row"><label class="inline">OCR workers <input type="number" id="setWorkers" min="1" max="8" style="width:70px"></label><button class="btn" id="btnThSave">Save settings</button></div>
+  <h3>Stored data</h3><div class="row"><button class="btn secondary" id="btnClearData">Clear decisions, corrections and OCR cache</button></div></div></section>
+<section id="tab-network"><div class="panel"><h2>Privacy &amp; network</h2>
+  <div class="privacy">Documents never leave this browser. The only network traffic is loading the code libraries (pdf.js, tesseract.js, pdf-lib, JSZip) from cdn.jsdelivr.net, and on the first OCR the tesseract worker, engine and English language data from the same CDN (then cached locally). Verify below, or in DevTools → Network.</div>
+  <p id="netSummary" class="muted"></p><div id="netList"></div>
+  <h3>Self-hosting</h3><p class="muted small">For air-gapped machines, set <span class="mono">localStorage.dealsplit.libs</span> to a JSON object with your own URLs for the keys: pdfjs, pdfjsWorker, tesseract, tesseractWorker, tesseractCore, tesseractLang, pdflib, jszip.</p></div></section>
+</main>
+
+<div class="modal" id="inspector" hidden><div class="box"><div class="row"><h2 id="insTitle" style="margin:0">Page</h2><span style="flex:1"></span><button class="btn secondary" id="insClose">Close</button></div><div id="insBody"></div></div></div>
+<div class="modal" id="newtype" hidden><div class="box"><h2>New document type from page <span id="ntPage"></span></h2>
+  <div class="row"><label class="inline">Display name <input type="text" id="ntName" size="34" placeholder="e.g. Dealer Participation Agreement"></label><label class="inline">Id <input type="text" id="ntId" size="18" placeholder="auto"></label><label class="inline">Folder <input type="text" id="ntFolder" size="16"></label></div>
+  <h3>Required for deal types</h3><div id="ntDeal"></div>
+  <h3>Anchors found in the header/footer (untick any that are not stable)</h3><div id="ntAnchors"></div>
+  <div class="row"><button class="btn" id="ntCreate">Create and learn this page</button><button class="btn secondary" id="ntCancel">Cancel</button><span id="ntMsg" class="bad"></span></div></div></div>
+
+<!-- @@SCRIPTS@@ -->
+<script>DS.App.boot();</script>
+</body>
+</html>

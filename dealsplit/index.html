@@ -1,0 +1,2397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DealSplit</title>
+<meta name="description" content="Browser-only splitter and classifier for dealership finance paperwork. Nothing leaves the browser.">
+<style>
+  :root { --bg:#f5f6f8; --panel:#fff; --ink:#1b2130; --muted:#5f6878; --line:#dcdfe6; --accent:#2b62d9; --accent-ink:#fff;
+          --ok:#1d8348; --warn:#b26a00; --bad:#c0392b; --field:#eef0f4; --hl:#fff6d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121419; --panel:#1a1e26; --ink:#e6e9ef; --muted:#98a1b2; --line:#2a303c; --accent:#5b8dff; --accent-ink:#0b1020;
+          --ok:#4cc37c; --warn:#e6b04d; --bad:#ff7b6b; --field:#232936; --hl:#3a3520; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0 8px 0 0; }
+  nav { display:flex; gap:2px; flex-wrap:wrap; }
+  nav button { background:none; border:0; color:var(--muted); padding:7px 11px; border-radius:8px; font:inherit; cursor:pointer; }
+  nav button.on { background:var(--field); color:var(--ink); font-weight:600; }
+  #status { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  main { max-width:1200px; margin:0 auto; padding:16px; }
+  main > section { display:none; } main > section.on { display:block; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+  .panel h2 { font-size:15px; margin:0 0 8px; } h3 { font-size:14px; margin:14px 0 6px; }
+  .muted { color:var(--muted); } .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; } .small { font-size:12px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  .btn { background:var(--accent); color:var(--accent-ink); border:0; border-radius:8px; padding:7px 13px; font:inherit; font-weight:600; cursor:pointer; }
+  .btn.secondary { background:var(--field); color:var(--ink); } .btn.small { padding:4px 9px; font-size:12px; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  input[type=text], input[type=number], select, textarea { background:var(--field); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 9px; font:inherit; }
+  textarea { width:100%; min-height:120px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:26px; text-align:center; color:var(--muted); }
+  #drop.over { border-color:var(--accent); color:var(--ink); }
+  #pages { display:grid; grid-template-columns:repeat(auto-fill,minmax(124px,1fr)); gap:8px; }
+  .pg { background:var(--field); border-radius:8px; padding:6px; cursor:pointer; border:2px solid transparent; font-size:12px; }
+  .pg .th { height:150px; display:flex; align-items:center; justify-content:center; background:#fff; border-radius:4px; overflow:hidden; }
+  .pg img { max-width:100%; max-height:100%; }
+  .pg .lbl { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pg.st-CONFIDENT { border-color:var(--ok); } .pg.st-LIKELY { border-color:var(--warn); } .pg.st-UNKNOWN { border-color:var(--bad); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:8px 0; }
+  .stat { background:var(--field); border-radius:10px; padding:8px 10px; } .stat .k { font-size:12px; color:var(--muted); } .stat .v { font-size:18px; font-weight:650; }
+  table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13px; } th { color:var(--muted); }
+  tr.hl { background:var(--hl); }
+  .rv { display:grid; grid-template-columns:90px 1fr; gap:10px; padding:8px; border-left:4px solid var(--line); margin-bottom:8px; background:var(--field); border-radius:8px; }
+  .rv img { width:90px; } .rv.st-LIKELY { border-color:var(--warn); } .rv.st-UNKNOWN { border-color:var(--bad); }
+  .tpl { padding:8px 0; border-bottom:1px solid var(--line); }
+  .alarm { border:1px solid var(--warn); color:var(--warn); border-radius:10px; padding:8px 12px; margin-top:8px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:flex-start; justify-content:center; padding:24px; overflow:auto; z-index:10; }
+  .modal[hidden] { display:none; }
+  .modal .box { background:var(--panel); border-radius:12px; padding:16px; width:min(1100px,100%); }
+  .insgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .insgrid canvas { width:100%; border:1px solid var(--line); }
+  pre { background:var(--field); padding:8px; border-radius:8px; overflow:auto; font-size:12px; max-height:260px; }
+  .privacy { border:1px solid var(--ok); color:var(--ok); border-radius:10px; padding:8px 12px; }
+  label.inline { display:inline-flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DealSplit</h1>
+  <nav>
+    <button data-tab="split" class="on">Split</button>
+    <button data-tab="review">Review <span id="reviewCount"></span></button>
+    <button data-tab="templates">Templates</button>
+    <button data-tab="rca">Root cause</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="network">Privacy &amp; network</button>
+  </nav>
+  <span id="status">Loading…</span>
+</header>
+<main>
+<section id="tab-split" class="on">
+  <div class="panel">
+    <div id="drop">Drop a combined PDF here, or <label class="btn secondary small" style="display:inline-block">choose a file<input id="fileInput" type="file" accept="application/pdf" hidden></label>
+      <div class="muted small" style="margin-top:6px">Everything runs in this browser tab. The PDF is never uploaded.</div></div>
+    <div class="row"><span id="fileInfo" class="muted"></span>
+      <button class="btn" id="btnRun" disabled>Split &amp; classify</button><button class="btn secondary" id="btnCancel">Cancel</button>
+      <span style="flex:1"></span>
+      <button class="btn secondary" id="btnFolder">Choose output folder…</button><span id="folderName" class="muted">(ZIP download if none)</span>
+      <button class="btn" id="btnWrite" disabled>Write deals</button></div>
+    <div id="summary"></div>
+  </div>
+  <div class="panel"><div id="pages"></div></div>
+  <div class="panel"><div id="results"></div></div>
+  <div class="panel"><h2>Manual split</h2><div class="muted small">Ranges and names, e.g. <span class="mono">1-4 RISC, 5 Odometer, 6-7 CreditApp</span>. Writes them without classification.</div>
+    <div class="row"><input type="text" id="manualRanges" size="60" placeholder="1-4 RISC, 5 Odometer"><button class="btn secondary" id="btnManual" disabled>Write manual split</button></div></div>
+</section>
+<section id="tab-review"><div class="panel"><h2>Review queue</h2><p class="muted small">Pages the system was not sure about. Choosing a template teaches it: the page's fingerprint becomes an example for that template.</p><div id="reviewList"></div></div></section>
+<section id="tab-templates">
+  <div class="panel"><h2>Template library <span class="mono muted small">v <span id="libVersion"></span></span></h2>
+    <div class="row"><button class="btn secondary" id="btnExport">Export JSON</button><label class="btn secondary" style="display:inline-block">Import JSON<input id="importInput" type="file" accept="application/json" hidden></label><button class="btn secondary" id="btnReset">Reset to defaults</button></div>
+    <div id="tplList"></div>
+    <h3>Edit template (JSON)</h3><textarea id="tplJson" placeholder="Click “Edit JSON” on a template, or paste a new one"></textarea>
+    <div class="row"><button class="btn" id="btnTplSave">Save template</button><span class="muted small">Saving replays all confirmed pages first and warns if precision would drop.</span></div>
+    <h3>Deal types (required document families)</h3><textarea id="dealTypes"></textarea>
+    <h3>Folder layout</h3><textarea id="folders" style="min-height:70px"></textarea>
+    <div class="row"><button class="btn" id="btnDealSave">Save deal types &amp; folders</button></div></div>
+</section>
+<section id="tab-rca"><div class="panel"><h2>Root cause analysis</h2><div id="rcaBody"></div><div class="row"><button class="btn secondary" id="btnExportLog">Export redacted decision log</button><span class="muted small">Hashes, boxes, scores and anchor names only; no words from the pages.</span></div></div></section>
+<section id="tab-settings"><div class="panel"><h2>Thresholds</h2>
+  <div class="row"><label class="inline">Accept <input type="number" id="thAccept" step="0.1" style="width:80px"></label><label class="inline">Margin <input type="number" id="thMargin" step="0.1" style="width:80px"></label><label class="inline">Likely <input type="number" id="thLikely" step="0.1" style="width:80px"></label>
+    <label class="inline">Min text-layer quality <input type="number" id="thText" step="0.05" style="width:80px"></label><label class="inline">Min OCR confidence <input type="number" id="thOcr" step="0.05" style="width:80px"></label><label class="inline">Min exemplars for layout <input type="number" id="thEx" step="1" style="width:70px"></label></div>
+  <div class="row"><label class="inline">OCR workers <input type="number" id="setWorkers" min="1" max="8" style="width:70px"></label><button class="btn" id="btnThSave">Save settings</button></div>
+  <h3>Stored data</h3><div class="row"><button class="btn secondary" id="btnClearData">Clear decisions, corrections and OCR cache</button></div></div></section>
+<section id="tab-network"><div class="panel"><h2>Privacy &amp; network</h2>
+  <div class="privacy">Documents never leave this browser. The only network traffic is loading the code libraries (pdf.js, tesseract.js, pdf-lib, JSZip) from cdn.jsdelivr.net, and on the first OCR the tesseract worker, engine and English language data from the same CDN (then cached locally). Verify below, or in DevTools → Network.</div>
+  <p id="netSummary" class="muted"></p><div id="netList"></div>
+  <h3>Self-hosting</h3><p class="muted small">For air-gapped machines, set <span class="mono">localStorage.dealsplit.libs</span> to a JSON object with your own URLs for the keys: pdfjs, pdfjsWorker, tesseract, tesseractWorker, tesseractCore, tesseractLang, pdflib, jszip.</p></div></section>
+</main>
+
+<div class="modal" id="inspector" hidden><div class="box"><div class="row"><h2 id="insTitle" style="margin:0">Page</h2><span style="flex:1"></span><button class="btn secondary" id="insClose">Close</button></div><div id="insBody"></div></div></div>
+<div class="modal" id="newtype" hidden><div class="box"><h2>New document type from page <span id="ntPage"></span></h2>
+  <div class="row"><label class="inline">Display name <input type="text" id="ntName" size="34" placeholder="e.g. Dealer Participation Agreement"></label><label class="inline">Id <input type="text" id="ntId" size="18" placeholder="auto"></label><label class="inline">Folder <input type="text" id="ntFolder" size="16"></label></div>
+  <h3>Required for deal types</h3><div id="ntDeal"></div>
+  <h3>Anchors found in the header/footer (untick any that are not stable)</h3><div id="ntAnchors"></div>
+  <div class="row"><button class="btn" id="ntCreate">Create and learn this page</button><button class="btn secondary" id="ntCancel">Cancel</button><span id="ntMsg" class="bad"></span></div></div></div>
+
+<script>
+/* ---- 0-infra.js ---- */
+/* =====================================================================
+ * Infra: small utilities and IndexedDB storage. Layer-neutral: every
+ * layer may use this; this uses nothing above it.
+ * ===================================================================== */
+window.DS = window.DS || {};
+DS.Infra = (() => {
+  'use strict';
+
+  /* ---------- hashing ---------- */
+  function fnv1a64(str) {
+    // 64-bit FNV-1a over UTF-16 code units, as two 32-bit halves.
+    let h1 = 0x811c9dc5 ^ 0, h2 = 0xcbf29ce4 | 0;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      h1 ^= c & 0xff; h1 = Math.imul(h1, 0x01000193) >>> 0;
+      h2 ^= c >>> 8;  h2 = Math.imul(h2, 0x01000193) >>> 0;
+      h1 ^= h2 >>> 13;
+    }
+    return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+  }
+  async function sha256Hex(bytes) {
+    const d = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  const POP8 = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) POP8[i] = (i & 1) + POP8[i >> 1];
+  /* Hamming distance between two 16-hex-char (64-bit) hashes. */
+  function hamming64(a, b) {
+    let d = 0;
+    for (let i = 0; i < 16; i++) d += POP8[parseInt(a[i], 16) ^ parseInt(b[i], 16)];
+    return d;
+  }
+
+  /* ---------- text similarity ---------- */
+  function normText(s) {
+    return (s || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function trigrams(s) {
+    const t = ' ' + s + ' ';
+    const out = new Map();
+    for (let i = 0; i + 3 <= t.length; i++) {
+      const g = t.slice(i, i + 3);
+      out.set(g, (out.get(g) || 0) + 1);
+    }
+    return out;
+  }
+  /* Dice coefficient over trigram multisets, 0..1. */
+  function trigramSim(a, b) {
+    if (!a || !b) return 0;
+    const ta = trigrams(a), tb = trigrams(b);
+    let inter = 0, na = 0, nb = 0;
+    for (const [g, c] of ta) { na += c; if (tb.has(g)) inter += Math.min(c, tb.get(g)); }
+    for (const c of tb.values()) nb += c;
+    return na + nb ? (2 * inter) / (na + nb) : 0;
+  }
+  /* Best fuzzy occurrence of `needle` inside `hay` (both normalized): slide a
+   * window of needle-length words over hay. Returns {sim, at}.
+   */
+  function fuzzyFind(needle, hay) {
+    const nw = needle.split(' ').length;
+    const hw = hay.split(' ');
+    if (!needle || hw.length === 0) return { sim: 0, at: -1 };
+    let best = 0, at = -1;
+    for (let i = 0; i + 1 <= hw.length; i++) {
+      for (const span of [nw, nw + 1, nw - 1]) {
+        if (span < 1 || i + span > hw.length) continue;
+        const s = trigramSim(needle, hw.slice(i, i + span).join(' '));
+        if (s > best) { best = s; at = i; }
+      }
+    }
+    return { sim: best, at };
+  }
+
+  /* ---------- vectors ---------- */
+  function cosine(a, b) {
+    let d = 0, na = 0, nb = 0;
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    return na && nb ? d / Math.sqrt(na * nb) : 0;
+  }
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const round = (v, p = 3) => Math.round(v * 10 ** p) / 10 ** p;
+
+  /* ---------- deep freeze (decision immutability) ---------- */
+  function deepFreeze(o) {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+      Object.freeze(o);
+      for (const k of Object.keys(o)) deepFreeze(o[k]);
+    }
+    return o;
+  }
+
+  /* ---------- IndexedDB ---------- */
+  const DB_NAME = 'dealsplit', DB_VERSION = 1;
+  const STORES = ['ocr', 'templates', 'dealtypes', 'settings', 'decisions', 'corrections', 'exemplarHistory', 'confirmed'];
+  let dbp = null;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        for (const s of STORES) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }).catch((e) => { dbp = null; throw e; });
+    return dbp;
+  }
+  function tx(store, mode, fn) {
+    return db().then((d) => new Promise((resolve, reject) => {
+      const t = d.transaction(store, mode);
+      const r = fn(t.objectStore(store));
+      t.oncomplete = () => resolve(r instanceof IDBRequest ? r.result : r);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    }));
+  }
+  const Store = {
+    get: (s, k) => tx(s, 'readonly', (o) => o.get(k)).then((r) => r),
+    put: (s, k, v) => tx(s, 'readwrite', (o) => o.put(v, k)),
+    del: (s, k) => tx(s, 'readwrite', (o) => o.delete(k)),
+    clear: (s) => tx(s, 'readwrite', (o) => o.clear()),
+    getAll: (s) => tx(s, 'readonly', (o) => o.getAll()),
+    getAllKeys: (s) => tx(s, 'readonly', (o) => o.getAllKeys()),
+    count: (s) => tx(s, 'readonly', (o) => o.count()),
+    available: () => db().then(() => true, () => false),
+  };
+
+  /* ---------- misc ---------- */
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+  return { fnv1a64, sha256Hex, hamming64, normText, trigramSim, fuzzyFind, cosine, clamp, round,
+           deepFreeze, Store, now, uid };
+})();
+
+</script>
+<script>
+/* ---- a-perception.js ---- */
+/* =====================================================================
+ * Layer A: Perception. Turns a page into features. Knows nothing about
+ * forms, templates or deals. Uses only DS.Infra.
+ * ===================================================================== */
+DS.Perception = (() => {
+  'use strict';
+  const { fnv1a64, sha256Hex, normText, clamp, round, now, Store } = DS.Infra;
+
+  /* ---------- canvases ---------- */
+  function makeCanvas(w, h) {
+    if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+
+  /* Render a pdf.js page at `dpi`. Returns {canvas, width, height, dpi, ms}. */
+  async function renderPage(page, dpi) {
+    const t0 = now();
+    const viewport = page.getViewport({ scale: dpi / 72 });
+    const w = Math.ceil(viewport.width), h = Math.ceil(viewport.height);
+    const canvas = makeCanvas(w, h);
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, w, h);
+    await page.render({ canvasContext: ctx, viewport, background: '#ffffff' }).promise;
+    return { canvas, width: w, height: h, dpi, ms: now() - t0 };
+  }
+
+  /* Grayscale luma as Uint8Array. */
+  function grayscale(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const { width: w, height: h } = canvas;
+    const img = ctx.getImageData(0, 0, w, h).data;
+    const g = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) {
+      g[i] = (img[j] * 77 + img[j + 1] * 150 + img[j + 2] * 29) >> 8;
+    }
+    return { w, h, data: g };
+  }
+
+  /* ---------- text layer ---------- */
+  const COMMON = new Set(('the and of to in for or by is are be this that with as at on from not any all ' +
+    'date name address city state zip phone signature buyer seller dealer vehicle year make model ' +
+    'vin price total amount tax fee cash down payment finance charge rate annual percentage lease ' +
+    'term monthly payments contract agreement application credit odometer title trade insurance ' +
+    'gap warranty service notice privacy disclosure page of form purchaser co-buyer lessee lessor ' +
+    'mileage stock number license customer employer income social security birth email initial').split(' '));
+  function tokenPlausible(tok) {
+    if (/^[A-Za-z]{2,}$/.test(tok)) {
+      if (COMMON.has(tok.toLowerCase())) return 2;
+      if (!/[aeiouyAEIOUY]/.test(tok) && tok.length > 3) return 0;
+      if (/[bcdfghjklmnpqrstvwxz]{5,}/i.test(tok)) return 0;
+      return 1;
+    }
+    if (/^[A-Za-z]$/.test(tok)) return 0.5;
+    if (/^[$(]?[\d,.]+%?\)?$/.test(tok) || /^\d[\d\/.-]*$/.test(tok)) return 1;
+    if (/^[A-Z0-9][A-Z0-9-]{1,}$/.test(tok)) return 1;      // form ids, VINs
+    if (/^[\w.,;:!?'"()$%#&/-]+$/.test(tok)) return 0.5;
+    return 0;                                                // glyph garbage
+  }
+
+  /* pdf.js text content → words with normalized boxes (0..1, y down) and a
+   * quality record that says whether this layer can be trusted.
+   */
+  async function extractTextLayer(page) {
+    const t0 = now();
+    const vp = page.getViewport({ scale: 1 });
+    const pw = vp.width, ph = vp.height;
+    const tc = await page.getTextContent();
+    const words = [];
+    let items = 0, longestItem = 0, totalChars = 0;
+    for (const it of tc.items) {
+      if (!('str' in it)) continue;
+      const s = it.str;
+      if (!s.trim()) continue;
+      items++;
+      totalChars += s.length;
+      longestItem = Math.max(longestItem, s.length);
+      const [a, b, c, d, e, f] = it.transform;
+      const fontH = Math.hypot(b, d) || it.height || 10;
+      const x = e, yTop = ph - f - fontH;
+      const wPer = it.width / Math.max(1, s.length);
+      let col = 0;
+      for (const m of s.matchAll(/\S+/g)) {
+        col = m.index;
+        words.push({
+          text: m[0],
+          x: round((x + col * wPer) / pw, 4),
+          y: round(yTop / ph, 4),
+          w: round((m[0].length * wPer) / pw, 4),
+          h: round(fontH / ph, 4),
+        });
+      }
+    }
+    let plaus = 0, garbage = 0;
+    for (const w of words) {
+      const p = tokenPlausible(w.text);
+      if (p >= 1) plaus += 1; else if (p === 0) garbage += 1;
+    }
+    const n = words.length;
+    const plausibleRatio = n ? plaus / n : 0;
+    const garbageRatio = n ? garbage / n : 0;
+    const giantString = items > 0 && items <= 2 && totalChars > 200;
+    let score = plausibleRatio * (1 - garbageRatio) * clamp(n / 25, 0, 1);
+    if (giantString) score *= 0.3;
+    if (n && garbageRatio > 0.35) score *= 0.4;
+    const quality = { score: round(score), tokenCount: n, plausibleRatio: round(plausibleRatio),
+                      garbageRatio: round(garbageRatio), giantString, items };
+    return { words, quality, text: normText(words.map((w) => w.text).join(' ')), ms: now() - t0 };
+  }
+
+  /* ---------- preprocessing ---------- */
+  function otsu(g) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < g.length; i++) hist[g[i]]++;
+    const total = g.length;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * hist[i];
+    let sumB = 0, wB = 0, best = 0, thr = 128;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t]; if (!wB) continue;
+      const wF = total - wB; if (!wF) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB, mF = (sum - sumB) / wF;
+      const v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > best) { best = v; thr = t; }
+    }
+    return thr;
+  }
+
+  function downscale(gray, maxW) {
+    const f = Math.max(1, Math.ceil(gray.w / maxW));
+    if (f === 1) return gray;
+    const w = Math.floor(gray.w / f), h = Math.floor(gray.h / f);
+    const out = new Uint8Array(w * h);
+    const src = gray.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let s = 0;
+        for (let dy = 0; dy < f; dy++) {
+          const row = (y * f + dy) * gray.w + x * f;
+          for (let dx = 0; dx < f; dx++) s += src[row + dx];
+        }
+        out[y * w + x] = s / (f * f);
+      }
+    }
+    return { w, h, data: out };
+  }
+
+  /* Skew estimate in degrees via projection-profile variance. Positive =
+   * content rotated clockwise. Works on a downscaled global-threshold image.
+   */
+  function estimateSkew(gray) {
+    const small = downscale(gray, 360);
+    const thr = Math.min(otsu(small.data), 200);
+    const xs = [], ys = [];
+    const cx = small.w / 2, cy = small.h / 2;
+    for (let y = 0; y < small.h; y++) {
+      for (let x = 0; x < small.w; x++) {
+        if (small.data[y * small.w + x] < thr) { xs.push(x - cx); ys.push(y - cy); }
+      }
+    }
+    if (xs.length < 50) return 0;
+    if (xs.length > 40000) { // subsample for speed
+      const step = Math.ceil(xs.length / 40000);
+      const sx = [], sy = [];
+      for (let i = 0; i < xs.length; i += step) { sx.push(xs[i]); sy.push(ys[i]); }
+      xs.length = 0; ys.length = 0; xs.push(...sx); ys.push(...sy);
+    }
+    const rows = new Float64Array(small.h * 2 + 4);
+    const variance = (deg) => {
+      const r = deg * Math.PI / 180, s = Math.sin(r), c = Math.cos(r);
+      rows.fill(0);
+      for (let i = 0; i < xs.length; i++) {
+        const yy = Math.round(ys[i] * c - xs[i] * s + small.h);
+        if (yy >= 0 && yy < rows.length) rows[yy]++;
+      }
+      let m = 0; for (let i = 0; i < rows.length; i++) m += rows[i];
+      m /= rows.length;
+      let v = 0; for (let i = 0; i < rows.length; i++) { const d = rows[i] - m; v += d * d; }
+      return v;
+    };
+    let best = 0, bestV = -1;
+    for (let a = -6; a <= 6; a += 0.5) { const v = variance(a); if (v > bestV) { bestV = v; best = a; } }
+    let fine = best;
+    for (let a = best - 0.5; a <= best + 0.5; a += 0.1) { const v = variance(a); if (v > bestV) { bestV = v; fine = a; } }
+    return round(fine, 2);
+  }
+
+  /* Rotate grayscale by -deg about the center, bilinear, white background. */
+  function rotateGray(gray, deg) {
+    const r = -deg * Math.PI / 180, s = Math.sin(r), c = Math.cos(r);
+    const { w, h, data } = gray;
+    const out = new Uint8Array(w * h).fill(255);
+    const cx = w / 2, cy = h / 2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = x - cx, dy = y - cy;
+        const sx = dx * c - dy * s + cx, sy = dx * s + dy * c + cy;
+        const x0 = Math.floor(sx), y0 = Math.floor(sy);
+        if (x0 < 0 || y0 < 0 || x0 >= w - 1 || y0 >= h - 1) continue;
+        const fx = sx - x0, fy = sy - y0;
+        const i = y0 * w + x0;
+        out[y * w + x] = data[i] * (1 - fx) * (1 - fy) + data[i + 1] * fx * (1 - fy) +
+                         data[i + w] * (1 - fx) * fy + data[i + w + 1] * fx * fy;
+      }
+    }
+    return { w, h, data: out };
+  }
+
+  /* Sauvola adaptive binarization using integral images. 1 = ink. */
+  function sauvola(gray, win = 25, k = 0.3) {
+    const { w, h, data } = gray;
+    const W = w + 1;
+    const I = new Float64Array(W * (h + 1)), I2 = new Float64Array(W * (h + 1));
+    for (let y = 1; y <= h; y++) {
+      let rs = 0, rs2 = 0;
+      for (let x = 1; x <= w; x++) {
+        const v = data[(y - 1) * w + (x - 1)];
+        rs += v; rs2 += v * v;
+        I[y * W + x] = I[(y - 1) * W + x] + rs;
+        I2[y * W + x] = I2[(y - 1) * W + x] + rs2;
+      }
+    }
+    const bin = new Uint8Array(w * h);
+    const r = win >> 1;
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+        const n = (y1 - y0) * (x1 - x0);
+        const s = I[y1 * W + x1] - I[y0 * W + x1] - I[y1 * W + x0] + I[y0 * W + x0];
+        const s2 = I2[y1 * W + x1] - I2[y0 * W + x1] - I2[y1 * W + x0] + I2[y0 * W + x0];
+        const m = s / n;
+        const v = Math.max(0, s2 / n - m * m);
+        const t = m * (1 + k * (Math.sqrt(v) / 128 - 1));
+        const px = data[y * w + x];
+        bin[y * w + x] = px < t && px < 190 ? 1 : 0;
+      }
+    }
+    return bin;
+  }
+
+  function contentBox(bin, w, h) {
+    const rows = new Uint32Array(h), cols = new Uint32Array(w);
+    let total = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (bin[y * w + x]) { rows[y]++; cols[x]++; total++; }
+    if (total < 20) return { x0: 0, y0: 0, x1: w, y1: h, ink: 0 };
+    const rt = Math.max(2, w * 0.004), ct = Math.max(2, h * 0.004);
+    let y0 = 0, y1 = h - 1, x0 = 0, x1 = w - 1;
+    while (y0 < h - 1 && rows[y0] < rt) y0++;
+    while (y1 > y0 && rows[y1] < rt) y1--;
+    while (x0 < w - 1 && cols[x0] < ct) x0++;
+    while (x1 > x0 && cols[x1] < ct) x1--;
+    const pad = 2;
+    x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w, x1 + pad + 1); y1 = Math.min(h, y1 + pad + 1);
+    return { x0, y0, x1, y1, ink: total / (w * h) };
+  }
+
+  function preprocess(gray) {
+    const t0 = now();
+    const skew = estimateSkew(gray);
+    const g = Math.abs(skew) >= 0.3 ? rotateGray(gray, skew) : gray;
+    const bin = sauvola(g, gray.w > 700 ? 41 : 25);
+    const box = contentBox(bin, g.w, g.h);
+    return { gray: g, bin, w: g.w, h: g.h, skewDeg: skew, box, inkCoverage: round(box.ink), ms: now() - t0 };
+  }
+
+  /* ---------- fingerprints ---------- */
+  /* Average-resample a region of a Uint8Array image to tw×th floats. */
+  function resample(data, w, region, tw, th) {
+    const out = new Float32Array(tw * th);
+    const rw = region.x1 - region.x0, rh = region.y1 - region.y0;
+    for (let ty = 0; ty < th; ty++) {
+      const sy0 = region.y0 + Math.floor(ty * rh / th), sy1 = Math.max(sy0 + 1, region.y0 + Math.floor((ty + 1) * rh / th));
+      for (let tx = 0; tx < tw; tx++) {
+        const sx0 = region.x0 + Math.floor(tx * rw / tw), sx1 = Math.max(sx0 + 1, region.x0 + Math.floor((tx + 1) * rw / tw));
+        let s = 0, n = 0;
+        for (let y = sy0; y < sy1; y++) for (let x = sx0; x < sx1; x++) { s += data[y * w + x]; n++; }
+        out[ty * tw + tx] = n ? s / n : 0;
+      }
+    }
+    return out;
+  }
+  const DCT_N = 32;
+  const DCT_COS = new Float32Array(DCT_N * DCT_N);
+  for (let u = 0; u < DCT_N; u++) for (let x = 0; x < DCT_N; x++) DCT_COS[u * DCT_N + x] = Math.cos(((2 * x + 1) * u * Math.PI) / (2 * DCT_N));
+  /* Perceptual hash of a 32×32 float image → 16 hex chars. */
+  function phashOf(img32) {
+    const tmp = new Float32Array(DCT_N * 8);
+    for (let y = 0; y < DCT_N; y++) for (let u = 0; u < 8; u++) {
+      let s = 0; for (let x = 0; x < DCT_N; x++) s += img32[y * DCT_N + x] * DCT_COS[u * DCT_N + x];
+      tmp[y * 8 + u] = s;
+    }
+    const coef = new Float32Array(64);
+    for (let v = 0; v < 8; v++) for (let u = 0; u < 8; u++) {
+      let s = 0; for (let y = 0; y < DCT_N; y++) s += tmp[y * 8 + u] * DCT_COS[v * DCT_N + y];
+      coef[v * 8 + u] = s;
+    }
+    const vals = Array.from(coef.slice(1)).sort((a, b) => a - b);
+    const med = vals[31];
+    let hex = '';
+    for (let i = 0; i < 64; i += 4) {
+      let nib = 0;
+      for (let b = 0; b < 4; b++) nib = (nib << 1) | (i + b > 0 && coef[i + b] > med ? 1 : 0);
+      hex += nib.toString(16);
+    }
+    return hex;
+  }
+
+  /* Long horizontal / vertical rules in a binary region → normalized lines. */
+  function detectLines(bin, w, box) {
+    const rw = box.x1 - box.x0, rh = box.y1 - box.y0;
+    const hMin = Math.max(20, rw * 0.15), vMin = Math.max(20, rh * 0.1);
+    const horiz = [], vert = [];
+    const runsRow = (y) => {
+      const runs = []; let start = -1, gap = 0;
+      for (let x = box.x0; x <= box.x1; x++) {
+        const ink = x < box.x1 && bin[y * w + x];
+        if (ink) { if (start < 0) start = x; gap = 0; }
+        else if (start >= 0 && ++gap > 2) { if (x - gap - start >= hMin) runs.push([start, x - gap]); start = -1; gap = 0; }
+      }
+      return runs;
+    };
+    let open = [];
+    for (let y = box.y0; y < box.y1; y++) {
+      const runs = runsRow(y);
+      const next = [];
+      for (const [x0, x1] of runs) {
+        const o = open.find((l) => Math.min(l.x1, x1) - Math.max(l.x0, x0) > 0.7 * Math.min(l.x1 - l.x0, x1 - x0));
+        if (o) { o.y1 = y; o.x0 = Math.min(o.x0, x0); o.x1 = Math.max(o.x1, x1); next.push(o); }
+        else next.push({ x0, x1, y0: y, y1: y });
+      }
+      for (const l of open) if (!next.includes(l)) horiz.push(l);
+      open = next;
+    }
+    horiz.push(...open);
+    const runsCol = (x) => {
+      const runs = []; let start = -1, gap = 0;
+      for (let y = box.y0; y <= box.y1; y++) {
+        const ink = y < box.y1 && bin[y * w + x];
+        if (ink) { if (start < 0) start = y; gap = 0; }
+        else if (start >= 0 && ++gap > 2) { if (y - gap - start >= vMin) runs.push([start, y - gap]); start = -1; gap = 0; }
+      }
+      return runs;
+    };
+    open = [];
+    for (let x = box.x0; x < box.x1; x++) {
+      const runs = runsCol(x);
+      const next = [];
+      for (const [y0, y1] of runs) {
+        const o = open.find((l) => Math.min(l.y1, y1) - Math.max(l.y0, y0) > 0.7 * Math.min(l.y1 - l.y0, y1 - y0));
+        if (o) { o.x1 = x; o.y0 = Math.min(o.y0, y0); o.y1 = Math.max(o.y1, y1); next.push(o); }
+        else next.push({ x0: x, x1: x, y0, y1 });
+      }
+      for (const l of open) if (!next.includes(l)) vert.push(l);
+      open = next;
+    }
+    vert.push(...open);
+    const nh = horiz.filter((l) => l.y1 - l.y0 < 8).map((l) => ({
+      y: round((l.y0 + l.y1) / 2 / rh - box.y0 / rh, 3), x0: round((l.x0 - box.x0) / rw, 3), x1: round((l.x1 - box.x0) / rw, 3),
+    })).sort((a, b) => a.y - b.y).slice(0, 48);
+    const nv = vert.filter((l) => l.x1 - l.x0 < 8).map((l) => ({
+      x: round((l.x0 + l.x1) / 2 / rw - box.x0 / rw, 3), y0: round((l.y0 - box.y0) / rh, 3), y1: round((l.y1 - box.y0) / rh, 3),
+    })).sort((a, b) => a.x - b.x).slice(0, 48);
+    return { h: nh, v: nv };
+  }
+
+  /* Count hollow, roughly square small components (checkboxes). */
+  function checkboxCount(bin, w, h, box) {
+    const lab = new Int32Array(w * h).fill(-1);
+    const stack = new Int32Array(w * h);
+    let count = 0, comps = 0;
+    for (let y = box.y0; y < box.y1; y++) {
+      for (let x = box.x0; x < box.x1; x++) {
+        const i = y * w + x;
+        if (!bin[i] || lab[i] >= 0) continue;
+        let sp = 0, n = 0, minx = x, maxx = x, miny = y, maxy = y;
+        stack[sp++] = i; lab[i] = comps;
+        while (sp) {
+          const j = stack[--sp]; n++;
+          const jx = j % w, jy = (j - jx) / w;
+          if (jx < minx) minx = jx; if (jx > maxx) maxx = jx; if (jy < miny) miny = jy; if (jy > maxy) maxy = jy;
+          const nb = [j - 1, j + 1, j - w, j + w];
+          for (const k of nb) {
+            if (k < 0 || k >= w * h || lab[k] >= 0 || !bin[k]) continue;
+            if (Math.abs((k % w) - jx) > 1) continue;
+            lab[k] = comps; stack[sp++] = k;
+          }
+          if (n > 4000) break;
+        }
+        comps++;
+        const bw = maxx - minx + 1, bh = maxy - miny + 1;
+        if (bw >= 6 && bw <= 26 && bh >= 6 && bh <= 26) {
+          const asp = bw / bh, fill = n / (bw * bh);
+          if (asp > 0.7 && asp < 1.4 && fill > 0.18 && fill < 0.6) count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  /* Full fingerprint of a preprocessed page. */
+  function fingerprint(pre) {
+    const t0 = now();
+    const { gray, bin, w, h, box } = pre;
+    const rw = box.x1 - box.x0, rh = box.y1 - box.y0;
+    const phash64 = phashOf(resample(gray.data, w, box, 32, 32));
+    const rows = new Float32Array(64), cols = new Float32Array(48);
+    for (let y = box.y0; y < box.y1; y++) {
+      const ry = Math.min(63, Math.floor((y - box.y0) * 64 / rh));
+      for (let x = box.x0; x < box.x1; x++) {
+        if (bin[y * w + x]) { rows[ry]++; cols[Math.min(47, Math.floor((x - box.x0) * 48 / rw))]++; }
+      }
+    }
+    for (let i = 0; i < 64; i++) rows[i] = round(rows[i] / (rw * (rh / 64)), 4);
+    for (let i = 0; i < 48; i++) cols[i] = round(cols[i] / (rh * (rw / 48)), 4);
+    const zones = [];
+    const hH = Math.max(8, Math.round(rh * 0.12)), fH = Math.max(8, Math.round(rh * 0.10));
+    for (let i = 0; i < 3; i++) {
+      zones.push({ x0: box.x0 + Math.floor(i * rw / 3), x1: box.x0 + Math.floor((i + 1) * rw / 3), y0: box.y0, y1: box.y0 + hH });
+    }
+    for (let i = 0; i < 3; i++) {
+      zones.push({ x0: box.x0 + Math.floor(i * rw / 3), x1: box.x0 + Math.floor((i + 1) * rw / 3), y0: box.y1 - fH, y1: box.y1 });
+    }
+    const regionHashes = [], regionInk = [];
+    for (const z of zones) {
+      regionHashes.push(phashOf(resample(gray.data, w, z, 32, 32)));
+      let ink = 0; for (let y = z.y0; y < z.y1; y++) for (let x = z.x0; x < z.x1; x++) ink += bin[y * w + x];
+      regionInk.push(round(ink / ((z.x1 - z.x0) * (z.y1 - z.y0)), 4));
+    }
+    const lineSig = detectLines(bin, w, box);
+    const checkboxDensity = round(checkboxCount(bin, w, h, box) * 1e5 / (rw * rh), 3);
+    return {
+      phash64, bandProfile: { rows: Array.from(rows), cols: Array.from(cols) }, lineSig, regionHashes, regionInk,
+      checkboxDensity, orientation: w >= h ? 'landscape' : 'portrait', aspect: round(w / h),
+      inkCoverage: pre.inkCoverage, contentBox: { x0: round(box.x0 / w), y0: round(box.y0 / h), x1: round(box.x1 / w), y1: round(box.y1 / h) },
+      ms: round(now() - t0, 1),
+    };
+  }
+
+  /* ---------- similarity between fingerprints (used by the reasoner, defined
+   * here because it is pure feature math) ---------- */
+  function lineSigSim(a, b) {
+    const one = (la, lb, key, k0, k1) => {
+      if (!la.length && !lb.length) return 1;
+      if (!la.length || !lb.length) return 0;
+      let m = 0;
+      for (const x of la) {
+        if (lb.some((y) => Math.abs(x[key] - y[key]) < 0.012 && Math.abs(x[k0] - y[k0]) < 0.06 && Math.abs(x[k1] - y[k1]) < 0.06)) m++;
+      }
+      return (2 * m) / (la.length + lb.length);
+    };
+    return round(0.65 * one(a.h, b.h, 'y', 'x0', 'x1') + 0.35 * one(a.v, b.v, 'x', 'y0', 'y1'));
+  }
+
+  /* ---------- page identity hashes ---------- */
+  async function pageHash(gray) {
+    // Hash of the 72-dpi render: keys the OCR cache and duplicate detection.
+    return sha256Hex(gray.data);
+  }
+  const textHash = (text) => fnv1a64(normText(text));
+
+  /* ---------- OCR pool ---------- */
+  const ocrPool = {
+    scheduler: null, workers: [], size: 0, ready: null, cfg: {}, stats: { jobs: 0, ms: 0, cacheHits: 0 },
+    configure(cfg) { this.cfg = { ...this.cfg, ...cfg }; },
+    async init(size) {
+      if (this.ready) return this.ready;
+      const T = window.Tesseract;
+      if (!T) throw new Error('tesseract.js not loaded');
+      this.size = Math.max(1, size | 0);
+      this.ready = (async () => {
+        this.scheduler = T.createScheduler();
+        const opts = { ...(this.cfg.tesseractOptions || {}), cacheMethod: 'write' };
+        await Promise.all(Array.from({ length: this.size }, async () => {
+          const w = await T.createWorker('eng', 1, opts);
+          await w.setParameters({ preserve_interword_spaces: '1' });
+          this.workers.push(w);
+          this.scheduler.addWorker(w);
+        }));
+      })();
+      return this.ready;
+    },
+    /* OCR a canvas (optionally a rectangle in canvas px). Words normalized to
+     * the full canvas (0..1). Cached by (pageHash, regionKey).
+     */
+    async recognize(canvas, rect, cacheKey) {
+      const key = cacheKey ? `${cacheKey}:${rect ? [rect.left, rect.top, rect.width, rect.height].join('x') : 'full'}` : null;
+      if (key) {
+        const hit = await Store.get('ocr', key).catch(() => undefined);
+        if (hit) { this.stats.cacheHits++; return hit; }
+      }
+      await this.init(this.size || 1);
+      const t0 = now();
+      const opts = rect ? { rectangle: rect } : {};
+      const { data } = await this.scheduler.addJob('recognize', canvas, opts);
+      const W = canvas.width, H = canvas.height;
+      const words = [];
+      let confSum = 0;
+      for (const w of data.words || []) {
+        if (!w.text || !w.text.trim()) continue;
+        const b = w.bbox;
+        words.push({ text: w.text, conf: round(w.confidence / 100, 3),
+          x: round(b.x0 / W, 4), y: round(b.y0 / H, 4), w: round((b.x1 - b.x0) / W, 4), h: round((b.y1 - b.y0) / H, 4) });
+        confSum += w.confidence / 100;
+      }
+      const res = { words, meanConf: words.length ? round(confSum / words.length) : 0,
+                    text: normText(words.map((w) => w.text).join(' ')), ms: round(now() - t0, 1) };
+      this.stats.jobs++; this.stats.ms += res.ms;
+      if (key) Store.put('ocr', key, res).catch(() => {});
+      return res;
+    },
+    async terminate() {
+      if (this.scheduler) await this.scheduler.terminate();
+      this.scheduler = null; this.workers = []; this.ready = null;
+    },
+  };
+
+  /* Header/footer strips (in canvas px) for strip-first OCR. */
+  function strips(canvas, contentBox) {
+    const W = canvas.width, H = canvas.height;
+    const cb = contentBox || { x0: 0, y0: 0, x1: 1, y1: 1 };
+    const y0 = Math.floor(cb.y0 * H), y1 = Math.ceil(cb.y1 * H), h = y1 - y0;
+    return {
+      header: { left: 0, top: y0, width: W, height: Math.max(20, Math.round(h * 0.16)) },
+      footer: { left: 0, top: Math.max(0, y1 - Math.round(h * 0.13)), width: W, height: Math.max(20, Math.round(h * 0.13)) },
+    };
+  }
+
+  return { renderPage, grayscale, extractTextLayer, preprocess, fingerprint, lineSigSim, pageHash, textHash,
+           ocrPool, strips, makeCanvas, _internal: { otsu, sauvola, estimateSkew, rotateGray, phashOf, resample, tokenPlausible } };
+})();
+
+</script>
+<script>
+/* ---- b-knowledge.js ---- */
+/* =====================================================================
+ * Layer B: Knowledge. The template library, deal types and VIN grammar.
+ * Pure data + validation + persistence. Uses only DS.Infra.
+ * ===================================================================== */
+DS.Knowledge = (() => {
+  'use strict';
+  const { Store, fnv1a64, hamming64, uid, normText } = DS.Infra;
+
+  const VIN_RE = /\b[A-HJ-NPR-Z0-9]{17}\b/g;           // strict
+  const VIN_LOOSE_RE = /\b[A-Z0-9]{17}\b/g;              // permissive (OCR may give I/O/Q)
+
+  /* ---------- default library ----------
+   * Anchors are phrases that survive revisions; form IDs are the strongest.
+   * Exemplars (fingerprints) are learned from the user's own scans.
+   */
+  const T = (id, displayName, family, folder, requiredFor, anchors, negatives, extra = {}) => ({
+    id, displayName, family, folder,
+    expectedPages: extra.expectedPages || { min: 1, max: 4 },
+    continuation: extra.continuation || { pattern: 'PAGE \\d+ OF \\d+' },
+    anchors, negatives: negatives || [],
+    exemplars: [],
+    fields: { vin: { zone: 'any', regex: 'VIN' }, ...(extra.fields || {}) },
+    routing: { folder, requiredFor },
+    dealTypeSignal: extra.dealTypeSignal || null,
+    enabled: true,
+  });
+  const A = (text, zone, weight, fuzzy = 0.85) => ({ text, zone, weight, fuzzy });
+
+  function defaultTemplates() {
+    return [
+      T('RISC', 'Retail Installment Sale Contract', 'RISC', '01_Contract', ['RETAIL'],
+        [A('RETAIL INSTALLMENT SALE CONTRACT', 'header', 3), A('ANNUAL PERCENTAGE RATE', 'any', 2, 0.9),
+         A('FINANCE CHARGE', 'any', 1.5, 0.9), A('TOTAL OF PAYMENTS', 'any', 1.5, 0.9), A('ITEMIZATION OF AMOUNT FINANCED', 'any', 2)],
+        [A('LEASE AGREEMENT', 'header', -4), A('CLOSED END', 'any', -3)],
+        { expectedPages: { min: 1, max: 6 }, dealTypeSignal: 'RETAIL' }),
+      T('LEASE', 'Motor Vehicle Lease Agreement', 'LEASE', '01_Contract', ['LEASE'],
+        [A('LEASE AGREEMENT', 'header', 3), A('CLOSED END', 'any', 2), A('LESSEE', 'any', 1.5, 0.9),
+         A('MONTHLY LEASE PAYMENT', 'any', 2), A('RESIDUAL VALUE', 'any', 2), A('EXCESS MILEAGE', 'any', 1.5)],
+        [A('RETAIL INSTALLMENT', 'header', -4), A('ANNUAL PERCENTAGE RATE', 'any', -2)],
+        { expectedPages: { min: 1, max: 8 }, dealTypeSignal: 'LEASE' }),
+      T('CREDIT_APP', 'Credit Application', 'CREDIT_APP', '02_CreditApp', ['RETAIL', 'LEASE'],
+        [A('CREDIT APPLICATION', 'header', 3), A('SOCIAL SECURITY', 'any', 1.5, 0.9), A('EMPLOYER', 'any', 1, 0.9),
+         A('MONTHLY INCOME', 'any', 1.5), A('CO-APPLICANT', 'any', 1.5)],
+        [A('SALE CONTRACT', 'header', -3)], { expectedPages: { min: 1, max: 3 } }),
+      T('ODOMETER', 'Odometer Disclosure Statement', 'ODOMETER', '03_Title', ['RETAIL', 'LEASE', 'CASH'],
+        [A('ODOMETER DISCLOSURE STATEMENT', 'header', 3), A('FEDERAL LAW', 'any', 1, 0.9), A('ACTUAL MILEAGE', 'any', 2),
+         A('NOT THE ACTUAL MILEAGE', 'any', 1.5), A('TENTHS', 'any', 1, 0.95)],
+        [], { expectedPages: { min: 1, max: 1 } }),
+      T('TITLE_APP', 'Application for Title and Registration', 'TITLE_APP', '03_Title', ['RETAIL', 'LEASE', 'CASH'],
+        [A('APPLICATION FOR TITLE', 'header', 3), A('REGISTRATION', 'header', 1, 0.9), A('LIENHOLDER', 'any', 2),
+         A('PLATE NUMBER', 'any', 1.5), A('BODY TYPE', 'any', 1)],
+        [A('ODOMETER DISCLOSURE STATEMENT', 'header', -3)], { expectedPages: { min: 1, max: 2 } }),
+      T('GAP', 'GAP Addendum', 'GAP', '04_Products', [],
+        [A('GUARANTEED ASSET PROTECTION', 'header', 3), A('GAP', 'header', 1.5, 0.95), A('ADDENDUM', 'header', 1, 0.9),
+         A('DEFICIENCY BALANCE', 'any', 2), A('PRIMARY INSURANCE', 'any', 1)],
+        [A('SERVICE CONTRACT', 'header', -3)], { expectedPages: { min: 1, max: 3 } }),
+      T('VSC', 'Vehicle Service Contract', 'VSC', '04_Products', [],
+        [A('VEHICLE SERVICE CONTRACT', 'header', 3), A('COVERAGE', 'any', 1, 0.9), A('DEDUCTIBLE', 'any', 2),
+         A('TERM MONTHS', 'any', 1), A('ADMINISTRATOR', 'any', 1.5)],
+        [A('GUARANTEED ASSET PROTECTION', 'header', -3)], { expectedPages: { min: 1, max: 4 } }),
+      T('PRIVACY', 'Privacy Notice', 'PRIVACY', '05_Compliance', ['RETAIL', 'LEASE', 'CASH'],
+        [A('PRIVACY NOTICE', 'header', 3), A('WHAT DOES', 'header', 1, 0.9), A('PERSONAL INFORMATION', 'any', 1.5),
+         A('AFFILIATES', 'any', 1.5), A('OPT OUT', 'any', 1.5)],
+        [], { expectedPages: { min: 1, max: 2 } }),
+      T('BUYERS_ORDER', "Buyer's Order", 'BUYERS_ORDER', '01_Contract', ['RETAIL', 'LEASE', 'CASH'],
+        [A('BUYERS ORDER', 'header', 3, 0.8), A('PURCHASE AGREEMENT', 'header', 1.5), A('STOCK NUMBER', 'any', 1.5),
+         A('SALES TAX', 'any', 1, 0.9), A('DOCUMENTARY FEE', 'any', 2), A('TRADE ALLOWANCE', 'any', 1.5)],
+        [A('RETAIL INSTALLMENT', 'header', -2), A('LEASE AGREEMENT', 'header', -2)],
+        { expectedPages: { min: 1, max: 2 }, dealTypeSignal: 'CASH_IF_ALONE' }),
+      T('TRADE_APPRAISAL', 'Trade-In Appraisal', 'TRADE_APPRAISAL', '06_Trade', [],
+        [A('TRADE IN APPRAISAL', 'header', 3, 0.8), A('APPRAISAL', 'header', 1, 0.9), A('PAYOFF', 'any', 2),
+         A('CONDITION', 'any', 1, 0.9), A('ACTUAL CASH VALUE', 'any', 2)],
+        [], { expectedPages: { min: 1, max: 2 } }),
+      T('INSURANCE', 'Insurance Verification', 'INSURANCE', '05_Compliance', ['RETAIL', 'LEASE'],
+        [A('INSURANCE VERIFICATION', 'header', 3), A('POLICY NUMBER', 'any', 2), A('AGENT', 'any', 1, 0.9),
+         A('COMPREHENSIVE', 'any', 1.5), A('COLLISION', 'any', 1.5), A('LOSS PAYEE', 'any', 2)],
+        [], { expectedPages: { min: 1, max: 1 } }),
+    ];
+  }
+
+  function defaultDealTypes() {
+    return {
+      RETAIL: { displayName: 'Retail (financed)', required: ['RISC', 'CREDIT_APP', 'ODOMETER', 'TITLE_APP', 'PRIVACY', 'BUYERS_ORDER', 'INSURANCE'] },
+      LEASE: { displayName: 'Lease', required: ['LEASE', 'CREDIT_APP', 'ODOMETER', 'TITLE_APP', 'PRIVACY', 'BUYERS_ORDER', 'INSURANCE'] },
+      CASH: { displayName: 'Cash', required: ['BUYERS_ORDER', 'ODOMETER', 'TITLE_APP', 'PRIVACY'] },
+    };
+  }
+
+  function defaultSettings() {
+    return {
+      thresholds: { accept: 6.0, margin: 2.5, likely: 3.5, textQualityMin: 0.45, ocrConfMin: 0.55, layoutMinExemplars: 2 },
+      folders: { reviewFolder: '_Review', duplicatesFolder: '_Duplicates', dealFolder: '<VIN>_<LastName>_<DealType>' },
+      ocrWorkers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)),
+      maxExemplars: 20,
+      libraryVersion: 1,
+    };
+  }
+
+  /* ---------- validation ---------- */
+  const ZONES = new Set(['header', 'footer', 'body', 'any']);
+  function validateTemplate(t) {
+    const errs = [];
+    if (!t || typeof t !== 'object') return ['not an object'];
+    if (!t.id || !/^[A-Za-z0-9_-]{1,40}$/.test(t.id)) errs.push('id must be 1-40 letters/digits/_/-');
+    if (!t.displayName) errs.push('displayName required');
+    if (!t.family) errs.push('family required');
+    if (!t.routing || !t.routing.folder) errs.push('routing.folder required');
+    for (const a of t.anchors || []) {
+      if (!a.text) errs.push('anchor text required');
+      if (!ZONES.has(a.zone)) errs.push(`anchor zone ${a.zone} invalid`);
+      if (typeof a.weight !== 'number') errs.push('anchor weight must be a number');
+    }
+    for (const a of t.negatives || []) if (typeof a.weight !== 'number' || a.weight > 0) errs.push('negative weights must be < 0');
+    return errs;
+  }
+  function normalizeTemplate(t) {
+    const out = { ...t };
+    out.anchors = (t.anchors || []).map((a) => ({ text: normText(a.text), zone: a.zone || 'any', weight: +a.weight, fuzzy: a.fuzzy ?? 0.85 }));
+    out.negatives = (t.negatives || []).map((a) => ({ text: normText(a.text), zone: a.zone || 'any', weight: -Math.abs(+a.weight), fuzzy: a.fuzzy ?? 0.85 }));
+    out.exemplars = t.exemplars || [];
+    out.expectedPages = t.expectedPages || { min: 1, max: 4 };
+    out.continuation = t.continuation || { pattern: 'PAGE \\d+ OF \\d+' };
+    out.fields = t.fields || {};
+    out.routing = { folder: t.routing?.folder || t.folder || '99_Other', requiredFor: t.routing?.requiredFor || [] };
+    out.folder = out.routing.folder;
+    out.enabled = t.enabled !== false;
+    return out;
+  }
+
+  /* ---------- library object ---------- */
+  const lib = {
+    templates: [], dealTypes: {}, settings: defaultSettings(), listeners: new Set(),
+    onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
+    _emit() { for (const f of this.listeners) f(this); },
+    versionHash() {
+      return fnv1a64(JSON.stringify({ t: this.templates, d: this.dealTypes, th: this.settings.thresholds }));
+    },
+    byId(id) { return this.templates.find((t) => t.id === id); },
+    async load() {
+      const [t, d, s] = await Promise.all([Store.get('templates', 'library'), Store.get('dealtypes', 'all'), Store.get('settings', 'main')]).catch(() => []);
+      this.templates = (t && t.length ? t : defaultTemplates()).map(normalizeTemplate);
+      this.dealTypes = d && Object.keys(d).length ? d : defaultDealTypes();
+      this.settings = { ...defaultSettings(), ...(s || {}) };
+      this.settings.thresholds = { ...defaultSettings().thresholds, ...(s?.thresholds || {}) };
+      this._emit();
+      return this;
+    },
+    async save() {
+      await Promise.all([Store.put('templates', 'library', this.templates), Store.put('dealtypes', 'all', this.dealTypes), Store.put('settings', 'main', this.settings)]);
+      this._emit();
+    },
+    upsertTemplate(t) {
+      const n = normalizeTemplate(t);
+      const errs = validateTemplate(n);
+      if (errs.length) throw new Error('Invalid template: ' + errs.join('; '));
+      const i = this.templates.findIndex((x) => x.id === n.id);
+      if (i >= 0) this.templates[i] = n; else this.templates.push(n);
+      this.settings.libraryVersion++;
+      return n;
+    },
+    removeTemplate(id) { this.templates = this.templates.filter((t) => t.id !== id); this.settings.libraryVersion++; },
+    /* Add an exemplar, keeping the set diverse (drop the exemplar nearest to
+     * its neighbours when over the cap). Returns {added, dropped}.
+     */
+    addExemplar(id, fp, meta = {}) {
+      const t = this.byId(id);
+      if (!t) throw new Error('unknown template ' + id);
+      const ex = { id: uid(), phash64: fp.phash64, bandProfile: fp.bandProfile, lineSig: fp.lineSig, regionHashes: fp.regionHashes,
+                   regionInk: fp.regionInk, checkboxDensity: fp.checkboxDensity, orientation: fp.orientation, aspect: fp.aspect,
+                   addedAt: new Date().toISOString(), ...meta };
+      if (t.exemplars.some((e) => hamming64(e.phash64, ex.phash64) <= 2)) return { added: null, dropped: null, reason: 'near-duplicate exemplar' };
+      t.exemplars.push(ex);
+      let dropped = null;
+      const cap = this.settings.maxExemplars || 20;
+      if (t.exemplars.length > cap) {
+        // drop the one with the smallest distance to its nearest neighbour (most redundant)
+        let worst = -1, worstD = Infinity;
+        for (let i = 0; i < t.exemplars.length; i++) {
+          let nn = Infinity;
+          for (let j = 0; j < t.exemplars.length; j++) if (i !== j) nn = Math.min(nn, hamming64(t.exemplars[i].phash64, t.exemplars[j].phash64));
+          if (nn < worstD) { worstD = nn; worst = i; }
+        }
+        dropped = t.exemplars.splice(worst, 1)[0];
+      }
+      this.settings.libraryVersion++;
+      return { added: ex, dropped };
+    },
+    removeExemplar(id, exId) {
+      const t = this.byId(id); if (!t) return false;
+      const n = t.exemplars.length;
+      t.exemplars = t.exemplars.filter((e) => e.id !== exId);
+      if (t.exemplars.length !== n) this.settings.libraryVersion++;
+      return t.exemplars.length !== n;
+    },
+    exportJSON() {
+      return JSON.stringify({ format: 'dealsplit-library', version: 1, exportedAt: new Date().toISOString(),
+        templates: this.templates, dealTypes: this.dealTypes, settings: this.settings }, null, 2);
+    },
+    importJSON(json, { merge = true } = {}) {
+      const o = typeof json === 'string' ? JSON.parse(json) : json;
+      if (o.format !== 'dealsplit-library') throw new Error('Not a DealSplit library file');
+      const incoming = (o.templates || []).map(normalizeTemplate);
+      for (const t of incoming) { const e = validateTemplate(t); if (e.length) throw new Error(`Template ${t.id}: ${e.join('; ')}`); }
+      if (merge) {
+        for (const t of incoming) {
+          const cur = this.byId(t.id);
+          if (cur) { // merge exemplars, keep local edits to anchors unless incoming is newer
+            const seen = new Set(cur.exemplars.map((e) => e.phash64));
+            for (const e of t.exemplars) if (!seen.has(e.phash64)) cur.exemplars.push(e);
+            cur.anchors = t.anchors; cur.negatives = t.negatives; cur.routing = t.routing; cur.displayName = t.displayName;
+          } else this.templates.push(t);
+        }
+        Object.assign(this.dealTypes, o.dealTypes || {});
+      } else {
+        this.templates = incoming; this.dealTypes = o.dealTypes || defaultDealTypes();
+      }
+      if (o.settings?.thresholds) this.settings.thresholds = { ...this.settings.thresholds, ...o.settings.thresholds };
+      if (o.settings?.folders) this.settings.folders = { ...this.settings.folders, ...o.settings.folders };
+      this.settings.libraryVersion++;
+      return { templates: incoming.length };
+    },
+    resetToDefaults() { this.templates = defaultTemplates().map(normalizeTemplate); this.dealTypes = defaultDealTypes(); this.settings = defaultSettings(); },
+  };
+
+  return { VIN_RE, VIN_LOOSE_RE, lib, defaultTemplates, defaultDealTypes, defaultSettings, validateTemplate, normalizeTemplate, ZONES };
+})();
+
+</script>
+<script>
+/* ---- c-reasoner.js ---- */
+/* =====================================================================
+ * Layer C: Reasoning. Features + library → classification with evidence.
+ * An evidence accumulator with abstention; never an if/else over keywords.
+ * Uses DS.Infra, DS.Perception (feature math only) and DS.Knowledge (data).
+ * ===================================================================== */
+DS.Reasoner = (() => {
+  'use strict';
+  const { hamming64, cosine, fuzzyFind, clamp, round, deepFreeze } = DS.Infra;
+  const { lineSigSim } = DS.Perception;
+
+  const FAMILIES = ['anchor', 'layout', 'region', 'structure', 'negative', 'context'];
+  const RUNGS = ['TEXT', 'FINGERPRINT', 'OCR_STRIPS', 'OCR_FULL', 'NONE'];
+
+  class InvariantViolation extends Error { constructor(m) { super('Invariant: ' + m); this.name = 'InvariantViolation'; } }
+  function assert(cond, msg) { if (!cond) throw new InvariantViolation(msg); }
+
+  /* ---------- text sources ----------
+   * A "text view" merges what we know: text layer (if trusted) and OCR
+   * results, each with a reliability in 0..1 used to scale anchor evidence.
+   */
+  function zoneOf(word, box) {
+    const cy = word.y + word.h / 2;
+    const h = box ? box.y1 - box.y0 : 1, y0 = box ? box.y0 : 0;
+    const rel = (cy - y0) / h;
+    return rel < 0.16 ? 'header' : rel > 0.86 ? 'footer' : 'body';
+  }
+  function buildTextView(features, thresholds) {
+    const views = [];
+    const tl = features.textLayer;
+    if (tl && tl.words.length) {
+      const trusted = tl.quality.score >= thresholds.textQualityMin;
+      views.push({ source: 'textLayer', reliability: trusted ? clamp(0.6 + tl.quality.score * 0.4, 0, 1) : 0, trusted, words: tl.words });
+    }
+    for (const key of ['ocrHeader', 'ocrFooter', 'ocrFull']) {
+      const o = features[key];
+      if (o && o.words.length) {
+        const ok = o.meanConf >= thresholds.ocrConfMin;
+        views.push({ source: key, reliability: ok ? clamp(o.meanConf, 0, 1) : o.meanConf * 0.3, trusted: ok, words: o.words });
+      }
+    }
+    const box = features.fingerprint?.contentBox;
+    for (const v of views) {
+      const z = { header: [], footer: [], body: [], any: [] };
+      for (const w of v.words) { z[zoneOf(w, box)].push(w.text); z.any.push(w.text); }
+      v.zoneText = {};
+      for (const k of Object.keys(z)) v.zoneText[k] = DS.Infra.normText(z[k].join(' '));
+    }
+    return views;
+  }
+
+  /* ---------- evidence families ---------- */
+  function anchorEvidence(tpl, views) {
+    const hits = [];
+    let total = 0;
+    const eval1 = (a, sign) => {
+      let best = null;
+      for (const v of views) {
+        if (!v.reliability) continue;
+        const hay = v.zoneText[a.zone] || '';
+        if (!hay) continue;
+        const { sim } = fuzzyFind(a.text, hay);
+        if (sim >= a.fuzzy && (!best || sim * v.reliability > best.sim * best.reliability)) best = { sim, reliability: v.reliability, source: v.source };
+      }
+      if (best) {
+        const strength = (best.sim - a.fuzzy) / (1 - a.fuzzy);        // 0..1 above the template's threshold
+        const c = sign * Math.abs(a.weight) * (0.5 + 0.5 * strength) * best.reliability;
+        hits.push({ text: a.text, zone: a.zone, sim: round(best.sim), source: best.source, contribution: round(c, 2) });
+        total += c;
+      }
+    };
+    for (const a of tpl.anchors) eval1(a, +1);
+    const pos = total;
+    const posHits = hits.length;
+    total = 0;
+    for (const a of tpl.negatives) eval1(a, -1);
+    return { anchor: { score: round(pos, 2), hits: hits.slice(0, posHits) }, negative: { score: round(total, 2), hits: hits.slice(posHits) } };
+  }
+
+  function layoutEvidence(tpl, fp, minExemplars) {
+    if (!fp || !tpl.exemplars.length) return { score: 0, detail: 'no exemplars' };
+    let best = null;
+    for (const e of tpl.exemplars) {
+      if (e.orientation !== fp.orientation) continue;
+      const d = hamming64(e.phash64, fp.phash64);
+      const cs = 0.5 * cosine(e.bandProfile.rows, fp.bandProfile.rows) + 0.5 * cosine(e.bandProfile.cols, fp.bandProfile.cols);
+      const ls = lineSigSim(e.lineSig, fp.lineSig);
+      // Hamming ≤ 6 is a near-identical page; ≥ 22 is unrelated.
+      const ph = clamp((22 - d) / 16, 0, 1);
+      const s = 3.0 * ph + 2.5 * clamp((cs - 0.75) / 0.25, 0, 1) + 1.5 * ls;
+      if (!best || s > best.s) best = { s, d, cs: round(cs), ls, exemplar: e.id };
+    }
+    if (!best) return { score: 0, detail: 'orientation mismatch' };
+    const capped = tpl.exemplars.length < minExemplars;
+    return { score: round(best.s, 2), hamming: best.d, profileCos: best.cs, lineSim: best.ls, exemplar: best.exemplar,
+             capped, detail: capped ? `only ${tpl.exemplars.length} exemplar(s): layout cannot reach CONFIDENT` : '' };
+  }
+
+  function regionEvidence(tpl, fp) {
+    if (!fp || !tpl.exemplars.length) return { score: 0, zones: [] };
+    let bestScore = -1, bestZones = null;
+    for (const e of tpl.exemplars) {
+      if (!e.regionHashes) continue;
+      const zones = [];
+      let s = 0;
+      for (let i = 0; i < 6; i++) {
+        const inkA = fp.regionInk?.[i] ?? 0, inkB = e.regionInk?.[i] ?? 0;
+        if (inkA < 0.004 && inkB < 0.004) { zones.push({ i, d: null }); continue; } // both blank: no information
+        if ((inkA < 0.004) !== (inkB < 0.004)) { zones.push({ i, d: 64 }); s -= 0.4; continue; }
+        const d = hamming64(e.regionHashes[i], fp.regionHashes[i]);
+        zones.push({ i, d });
+        s += clamp((20 - d) / 14, -0.5, 1) * (i === 3 || i === 4 || i === 5 ? 0.9 : 0.7); // footer zones (form ids) matter slightly more
+      }
+      if (s > bestScore) { bestScore = s; bestZones = zones; }
+    }
+    return { score: round(clamp(bestScore, -2, 4.5), 2), zones: bestZones || [] };
+  }
+
+  function structureEvidence(tpl, fp) {
+    if (!fp) return { score: 0 };
+    let s = 0;
+    const notes = [];
+    if (tpl.exemplars.length) {
+      const ex = tpl.exemplars;
+      const cbMean = ex.reduce((a, e) => a + (e.checkboxDensity || 0), 0) / ex.length;
+      const cbDiff = Math.abs(cbMean - fp.checkboxDensity) / Math.max(0.5, cbMean, fp.checkboxDensity);
+      s += cbDiff < 0.35 ? 0.4 : cbDiff > 0.8 ? -0.4 : 0;
+      notes.push(`checkbox ${fp.checkboxDensity} vs ${round(cbMean, 2)}`);
+      if (ex.every((e) => e.orientation !== fp.orientation)) { s -= 1.5; notes.push('orientation differs from all exemplars'); }
+      const aspMean = ex.reduce((a, e) => a + e.aspect, 0) / ex.length;
+      if (Math.abs(aspMean - fp.aspect) > 0.08) { s -= 0.5; notes.push('aspect differs'); }
+    }
+    return { score: round(s, 2), notes };
+  }
+
+  /* ---------- per-page scoring ---------- */
+  function scorePage(features, library, thresholds) {
+    const views = buildTextView(features, thresholds);
+    const fp = features.fingerprint;
+    const rows = [];
+    for (const tpl of library.templates) {
+      if (tpl.enabled === false) continue;
+      const { anchor, negative } = anchorEvidence(tpl, views);
+      const layout = layoutEvidence(tpl, fp, thresholds.layoutMinExemplars);
+      const region = regionEvidence(tpl, fp);
+      const structure = structureEvidence(tpl, fp);
+      const ev = { anchor: anchor.score, layout: layout.score, region: region.score, structure: structure.score, negative: negative.score, context: 0 };
+      const total = ev.anchor + ev.layout + ev.region + ev.structure + ev.negative;
+      rows.push({ templateId: tpl.id, family: tpl.family, total: round(total, 2), evidence: ev,
+                  detail: { anchor: anchor.hits, negative: negative.hits, layout, region, structure },
+                  layoutCapped: !!layout.capped });
+    }
+    rows.sort((a, b) => b.total - a.total);
+    const textTrusted = views.some((v) => v.trusted && v.source === 'textLayer');
+    const ocrTrusted = views.some((v) => v.trusted && v.source !== 'textLayer');
+    return { rows, textTrusted, ocrTrusted, views: views.map((v) => ({ source: v.source, reliability: round(v.reliability), trusted: v.trusted })) };
+  }
+
+  /* Families that agree: positive contribution above a floor. */
+  function agreeingFamilies(ev) {
+    const out = [];
+    if (ev.anchor >= 2) out.push('anchor');
+    if (ev.layout >= 2.5) out.push('layout');
+    if (ev.region >= 1.5) out.push('region');
+    if (ev.structure >= 0.4) out.push('structure');
+    if (ev.context >= 1.5) out.push('context');
+    return out;
+  }
+
+  /* ---------- decision rule ---------- */
+  function decide(scored, features, thresholds, rung, library) {
+    const [top, second] = scored.rows;
+    const notes = [];
+    if (!top) return { state: 'UNKNOWN', notes: ['no templates'] };
+    // Negative evidence is always evaluated (it is already inside total; assert it was computed).
+    assert(typeof top.evidence.negative === 'number', 'negative evidence must be evaluated');
+    const margin = second ? top.total - second.total : top.total;
+    const families = agreeingFamilies(top.evidence);
+    // Layout family cannot count when the template has too few exemplars.
+    const tpl = library.byId(top.templateId);
+    assert(!(top.layoutCapped && top.evidence.layout >= 2.5 && families.includes('layout') && tpl.exemplars.length >= thresholds.layoutMinExemplars),
+      'layout cap bookkeeping');
+    const famEff = families.filter((f) => !(f === 'layout' && top.layoutCapped));
+    // Text-only identity is forbidden when neither text source is trustworthy.
+    const textOnly = famEff.every((f) => f === 'anchor' || f === 'context');
+    if (textOnly && !scored.textTrusted && !scored.ocrTrusted) {
+      notes.push('text evidence untrusted (layer quality and OCR confidence both below threshold)');
+      assert(true, 'text-only identity with untrusted text is blocked');
+      return { state: top.total >= thresholds.likely ? 'LIKELY' : 'UNKNOWN', margin, families: famEff, notes, blocked: 'untrusted-text' };
+    }
+    let state = 'UNKNOWN';
+    if (top.total >= thresholds.accept && margin >= thresholds.margin && famEff.length >= 2) state = 'CONFIDENT';
+    else if (top.total >= thresholds.likely) state = 'LIKELY';
+    if (state === 'CONFIDENT' && top.layoutCapped && famEff.length < 2) state = 'LIKELY';
+    if (state !== 'CONFIDENT') {
+      if (top.total < thresholds.accept) notes.push(`score ${top.total} < accept ${thresholds.accept}`);
+      if (margin < thresholds.margin) notes.push(`margin ${round(margin, 2)} < ${thresholds.margin}`);
+      if (famEff.length < 2) notes.push(`only ${famEff.length} evidence family agrees (${famEff.join(',') || 'none'})`);
+      if (top.layoutCapped) notes.push(top.detail.layout.detail);
+    }
+    return { state, margin: round(margin, 2), families: famEff, notes };
+  }
+
+  /* Build the immutable decision object. */
+  function makeDecision({ pageIndex, features, scored, verdict, rung, thresholds, libraryVersion, timings }) {
+    const top = scored.rows[0];
+    const d = {
+      pageIndex, state: verdict.state,
+      templateId: verdict.state === 'UNKNOWN' ? null : top?.templateId || null,
+      family: verdict.state === 'UNKNOWN' ? null : top?.family || null,
+      score: top?.total ?? 0, margin: verdict.margin ?? 0, agreeingFamilies: verdict.families || [],
+      rung, notes: verdict.notes || [], blocked: verdict.blocked || null,
+      candidates: scored.rows.slice(0, 5).map((r) => ({ templateId: r.templateId, total: r.total, evidence: r.evidence, detail: r.detail })),
+      textSources: scored.views, quality: features.quality,
+      thresholds: { ...thresholds }, libraryVersion, timings: { ...timings }, decidedAt: new Date().toISOString(),
+    };
+    return deepFreeze(d);
+  }
+
+  /* ---------- escalation ladder ----------
+   * `perceive` is an async callback provided by the orchestrator: given a
+   * rung name it fills in the corresponding features (text layer,
+   * fingerprint, OCR strips, OCR full) and returns the features object.
+   */
+  async function classifyPage(pageIndex, perceive, library, thresholds, log) {
+    const t0 = DS.Infra.now();
+    const timings = {};
+    let features = null, scored = null, verdict = null, rung = 'NONE';
+    const ladder = [
+      { rung: 'TEXT', need: 'textLayer' },
+      { rung: 'FINGERPRINT', need: 'fingerprint' },
+      { rung: 'OCR_STRIPS', need: 'ocrStrips' },
+      { rung: 'OCR_FULL', need: 'ocrFull' },
+    ];
+    for (const step of ladder) {
+      const ts = DS.Infra.now();
+      features = await perceive(step.need, features);
+      timings[step.rung] = round(DS.Infra.now() - ts, 1);
+      // Skip pointless rungs: no text layer at all → straight to fingerprint.
+      if (step.rung === 'TEXT' && (!features.textLayer || !features.textLayer.words.length)) continue;
+      scored = scorePage(features, library, thresholds);
+      try {
+        verdict = decide(scored, features, thresholds, step.rung, library);
+      } catch (e) {
+        if (e instanceof InvariantViolation) { verdict = { state: 'UNKNOWN', notes: [e.message], families: [] }; log?.('invariant', e.message); }
+        else throw e;
+      }
+      rung = step.rung;
+      if (verdict.state === 'CONFIDENT') break;
+      // OCR cannot add information when the embedded text layer is already
+      // trustworthy: it would read the same words. Stop escalating there.
+      if (step.rung === 'FINGERPRINT' && scored.textTrusted) { verdict.notes = [...(verdict.notes || []), 'OCR skipped: text layer trusted']; break; }
+    }
+    if (!scored) { // no rung produced a score (e.g. no templates)
+      scored = { rows: [], textTrusted: false, ocrTrusted: false, views: [] };
+      verdict = { state: 'UNKNOWN', notes: ['no evidence'], families: [] };
+    }
+    timings.total = round(DS.Infra.now() - t0, 1);
+    return { decision: makeDecision({ pageIndex, features, scored, verdict, rung, thresholds, libraryVersion: library.versionHash(), timings }), features };
+  }
+
+  /* ---------- context pass (second pass, after per-page decisions) ----------
+   * Neighbouring pages inform LIKELY/UNKNOWN pages: a page between two pages
+   * of the same family, or following page n-1 with a matching continuation
+   * marker, gets context evidence. Returns new (immutable) decisions.
+   */
+  function contextPass(decisions, featuresList, library, thresholds) {
+    const out = decisions.slice();
+    const contOf = (i) => {
+      const f = featuresList[i];
+      const txt = (f?.textLayer?.text || '') + ' ' + (f?.ocrHeader?.text || '') + ' ' + (f?.ocrFooter?.text || '');
+      const m = /PAGE (\d+) OF (\d+)/.exec(txt);
+      return m ? { n: +m[1], of: +m[2] } : null;
+    };
+    for (let i = 0; i < decisions.length; i++) {
+      const d = decisions[i];
+      if (d.state === 'CONFIDENT') continue;
+      const prev = out[i - 1], next = out[i + 1];
+      let boost = 0, from = null, why = [];
+      const cand = (tid) => d.candidates.find((c) => c.templateId === tid);
+      const consider = (nb, tag) => {
+        if (!nb || nb.state !== 'CONFIDENT') return;
+        const c = cand(nb.templateId);
+        if (!c) return;
+        const tpl = library.byId(nb.templateId);
+        const cont = contOf(i), contNb = contOf(i - 1);
+        let b = 0;
+        if (tag === 'prev' && cont && contNb && cont.n === contNb.n + 1 && cont.of === contNb.of) { b = 4; why.push(`page ${cont.n} of ${cont.of} follows page ${contNb.n}`); }
+        else if (tag === 'prev' && cont && cont.n > 1 && tpl.expectedPages.max >= cont.n) { b = 2.5; why.push(`page ${cont.n} of ${cont.of} after a ${tpl.id} page`); }
+        else if (prev && next && prev.state === 'CONFIDENT' && next.state === 'CONFIDENT' && prev.templateId === next.templateId && prev.templateId === nb.templateId) { b = 3; why.push(`sandwiched between two ${tpl.id} pages`); }
+        else if (tag === 'prev' && tpl.expectedPages.max > 1 && c.total > 0) { b = 1.2; why.push(`follows a ${tpl.id} page`); }
+        if (b > boost) { boost = b; from = nb.templateId; }
+      };
+      consider(prev, 'prev');
+      consider(next, 'next');
+      if (!boost) continue;
+      const rows = d.candidates.map((c) => ({ ...c, evidence: { ...c.evidence, context: c.templateId === from ? boost : 0 },
+        total: round(c.total + (c.templateId === from ? boost : 0), 2), family: library.byId(c.templateId)?.family, layoutCapped: c.detail?.layout?.capped }));
+      rows.sort((a, b) => b.total - a.total);
+      const scored = { rows, textTrusted: d.textSources.some((v) => v.trusted && v.source === 'textLayer'), ocrTrusted: d.textSources.some((v) => v.trusted && v.source !== 'textLayer'), views: d.textSources };
+      let verdict;
+      try { verdict = decide(scored, featuresList[i], thresholds, d.rung, library); }
+      catch (e) { verdict = { state: 'UNKNOWN', notes: [e.message], families: [] }; }
+      verdict.notes = [...(verdict.notes || []), `context: ${why.join('; ')} (+${boost})`];
+      out[i] = makeDecision({ pageIndex: d.pageIndex, features: featuresList[i], scored, verdict, rung: d.rung + '+CTX', thresholds, libraryVersion: d.libraryVersion, timings: d.timings });
+    }
+    return out;
+  }
+
+  /* Replay: score stored feature records without perception (regression harness). */
+  function replay(featureRecord, library, thresholds) {
+    const scored = scorePage(featureRecord, library, thresholds);
+    let verdict;
+    try { verdict = decide(scored, featureRecord, thresholds, featureRecord.rung || 'REPLAY', library); }
+    catch (e) { verdict = { state: 'UNKNOWN', notes: [e.message], families: [] }; }
+    return makeDecision({ pageIndex: featureRecord.pageIndex ?? -1, features: featureRecord, scored, verdict, rung: 'REPLAY', thresholds, libraryVersion: library.versionHash(), timings: {} });
+  }
+
+  return { FAMILIES, RUNGS, InvariantViolation, scorePage, decide, classifyPage, contextPass, replay, buildTextView, zoneOf };
+})();
+
+</script>
+<script>
+/* ---- d-policy.js ---- */
+/* =====================================================================
+ * Layer D: Policy / Workflow. Segmentation, duplicates, VIN, deal grouping,
+ * routing, manifests, and the writer. Consumes reasoner decisions; never
+ * re-interprets raw features.
+ * ===================================================================== */
+DS.Policy = (() => {
+  'use strict';
+  const { hamming64, round, normText } = DS.Infra;
+  const { VIN_LOOSE_RE } = DS.Knowledge;
+
+  /* ---------- VIN ---------- */
+  const VIN_VALUES = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8, J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
+                       S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9 };
+  const VIN_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+  function vinCheckDigit(vin) {
+    let sum = 0;
+    for (let i = 0; i < 17; i++) {
+      const c = vin[i];
+      const v = c >= '0' && c <= '9' ? +c : VIN_VALUES[c];
+      if (v === undefined) return null;
+      sum += v * VIN_WEIGHTS[i];
+    }
+    const r = sum % 11;
+    return r === 10 ? 'X' : String(r);
+  }
+  const vinValid = (vin) => /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) && vinCheckDigit(vin) === vin[8];
+
+  /* Repair an OCR'd 17-char candidate. Unconditional: I→1, O→0, Q→0.
+   * Conditional (only if the check digit then validates): S↔5, B↔8, Z↔2, and
+   * at most two such substitutions.
+   */
+  function repairVin(raw) {
+    const base = raw.toUpperCase().replace(/I/g, '1').replace(/[OQ]/g, '0');
+    if (vinValid(base)) return { vin: base, repaired: base !== raw, steps: base !== raw ? ['IOQ'] : [] };
+    const swaps = { S: '5', 5: 'S', B: '8', 8: 'B', Z: '2', 2: 'Z' };
+    const idx = [];
+    for (let i = 0; i < 17; i++) if (swaps[base[i]]) idx.push(i);
+    for (const i of idx) {
+      const c = base.slice(0, i) + swaps[base[i]] + base.slice(i + 1);
+      if (vinValid(c)) return { vin: c, repaired: true, steps: ['IOQ', `pos${i + 1}:${base[i]}→${swaps[base[i]]}`] };
+    }
+    for (let a = 0; a < idx.length; a++) for (let b = a + 1; b < idx.length; b++) {
+      const i = idx[a], j = idx[b];
+      let c = base.slice(0, i) + swaps[base[i]] + base.slice(i + 1);
+      c = c.slice(0, j) + swaps[base[j]] + c.slice(j + 1);
+      if (vinValid(c)) return { vin: c, repaired: true, steps: ['IOQ', `pos${i + 1}`, `pos${j + 1}`] };
+    }
+    return { vin: null, repaired: false, steps: [] };
+  }
+
+  /* All VIN candidates on a page from every text source, with provenance. */
+  function extractVins(features, pageIndex) {
+    const out = [];
+    const sources = [['textLayer', features.textLayer], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
+    for (const [src, s] of sources) {
+      if (!s) continue;
+      const conf = src === 'textLayer' ? s.quality.score : s.meanConf;
+      const text = s.words.map((w) => w.text).join(' ').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ');
+      const joined = text.replace(/\s+/g, ' ');
+      const seen = new Set();
+      for (const m of joined.matchAll(VIN_LOOSE_RE)) {
+        if (seen.has(m[0])) continue;
+        seen.add(m[0]);
+        const r = repairVin(m[0]);
+        out.push({ raw: m[0], vin: r.vin, valid: !!r.vin, repaired: r.repaired, steps: r.steps, source: src, confidence: round(conf), pageIndex });
+      }
+      // Also try tokens split by OCR noise: 17 chars across two adjacent words
+      const words = s.words.map((w) => w.text.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+      for (let i = 0; i + 1 < words.length; i++) {
+        const j = words[i] + words[i + 1];
+        if (j.length === 17 && !seen.has(j)) {
+          const r = repairVin(j);
+          if (r.vin) { seen.add(j); out.push({ raw: j, vin: r.vin, valid: true, repaired: r.repaired, steps: [...r.steps, 'joined'], source: src, confidence: round(conf * 0.8), pageIndex }); }
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------- segmentation ---------- */
+  function continuationInfo(features) {
+    const txt = [features.textLayer?.text, features.ocrHeader?.text, features.ocrFooter?.text, features.ocrFull?.text].filter(Boolean).join(' ');
+    const m = /PAGE (\d+) OF (\d+)/.exec(txt);
+    return m ? { n: +m[1], of: +m[2] } : null;
+  }
+  /* Group consecutive pages into documents. */
+  function segment(pages) {
+    // pages: [{pageIndex, decision, features, dup}]
+    const docs = [];
+    let cur = null;
+    for (const p of pages) {
+      const d = p.decision;
+      const fam = d.family || 'UNKNOWN';
+      const cont = continuationInfo(p.features);
+      let start = !cur;
+      if (cur) {
+        const prevFam = cur.family;
+        if (fam !== prevFam) start = true;
+        else if (cont && cont.n === 1) start = true;
+        else if (cont && cur.lastCont && cont.n !== cur.lastCont.n + 1) start = true;
+        else if (cur.pages.length >= (cur.expectedMax || 8)) start = true;
+        else if (fam === 'UNKNOWN') start = true;              // never merge unknown pages
+        else if (!cont && cur.headerHash && p.features.fingerprint && hamming64(cur.headerHash, p.features.fingerprint.regionHashes[1]) <= 6 && cur.pages.length >= 1 && (cur.expectedMax || 1) === 1) start = true;
+      }
+      if (start) {
+        cur = { id: docs.length + 1, family: fam, templateId: d.templateId, pages: [], lastCont: null,
+                headerHash: p.features.fingerprint?.regionHashes?.[1] || null, expectedMax: p.expectedMax, states: new Set() };
+        docs.push(cur);
+      }
+      cur.pages.push(p);
+      cur.states.add(d.state);
+      cur.lastCont = cont;
+    }
+    for (const doc of docs) {
+      doc.state = doc.states.has('UNKNOWN') ? 'UNKNOWN' : doc.states.has('LIKELY') ? 'LIKELY' : 'CONFIDENT';
+      delete doc.states;
+    }
+    return docs;
+  }
+
+  /* ---------- duplicates ---------- */
+  function markDuplicates(pages) {
+    const seen = [];
+    for (const p of pages) {
+      const fp = p.features.fingerprint;
+      const th = p.features.textHash;
+      p.dup = null;
+      for (const s of seen) {
+        const sameImg = fp && s.fp && hamming64(fp.phash64, s.fp.phash64) <= 3;
+        const sameText = th && s.th && th === s.th && (p.features.textLayer?.words.length || 0) > 20;
+        if ((sameImg && (sameText || !th || !s.th)) || (sameText && fp && s.fp && hamming64(fp.phash64, s.fp.phash64) <= 10)) { p.dup = s.pageIndex; break; }
+      }
+      if (p.dup === null) seen.push({ pageIndex: p.pageIndex, fp, th });
+    }
+    return pages;
+  }
+
+  /* ---------- deal grouping ---------- */
+  function groupDeals(docs, library) {
+    // 1. VIN per document: prefer high-confidence sources and strong doc types.
+    const strong = new Set(['BUYERS_ORDER', 'RISC', 'LEASE', 'TITLE_APP', 'ODOMETER']);
+    for (const doc of docs) {
+      const cands = doc.pages.flatMap((p) => p.vins || []).filter((v) => v.valid);
+      const tally = new Map();
+      for (const v of cands) {
+        const w = v.confidence * (v.source === 'textLayer' ? 1.2 : 1) * (v.repaired ? 0.8 : 1) * (strong.has(doc.family) ? 1.3 : 1);
+        tally.set(v.vin, (tally.get(v.vin) || 0) + w);
+      }
+      const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+      doc.vin = best ? best[0] : null;
+      doc.vinWeight = best ? round(best[1], 2) : 0;
+      doc.vinCandidates = cands;
+    }
+    // 2. Propagate along contiguous runs: a doc without a VIN takes the VIN of
+    //    its neighbours when both neighbours agree, or the previous when the
+    //    next has none.
+    for (let i = 0; i < docs.length; i++) {
+      if (docs[i].vin) continue;
+      const prev = docs[i - 1]?.vin, next = docs[i + 1]?.vin;
+      if (prev && (!next || next === prev)) { docs[i].vin = prev; docs[i].vinPropagated = 'previous'; }
+      else if (next && !prev) { docs[i].vin = next; docs[i].vinPropagated = 'next'; }
+    }
+    // 3. Group.
+    const deals = new Map();
+    for (const doc of docs) {
+      const key = doc.vin || '_NOVIN';
+      if (!deals.has(key)) deals.set(key, { vin: doc.vin, docs: [], families: new Set() });
+      const deal = deals.get(key);
+      deal.docs.push(doc);
+      if (doc.family && doc.family !== 'UNKNOWN') deal.families.add(doc.family);
+    }
+    // 4. Deal type + last name + checklist.
+    const out = [];
+    for (const deal of deals.values()) {
+      const fams = deal.families;
+      const signals = [];
+      for (const t of library.templates) if (fams.has(t.family) && t.dealTypeSignal) signals.push(t.dealTypeSignal);
+      let type = null, ambiguous = false;
+      const hasRetail = signals.includes('RETAIL'), hasLease = signals.includes('LEASE');
+      if (hasRetail && hasLease) ambiguous = true;
+      else if (hasRetail) type = 'RETAIL';
+      else if (hasLease) type = 'LEASE';
+      else if (signals.includes('CASH_IF_ALONE')) type = 'CASH';
+      deal.dealType = type; deal.ambiguousType = ambiguous;
+      deal.lastName = guessLastName(deal.docs);
+      const req = type ? (library.dealTypes[type]?.required || []) : [];
+      deal.missing = req.filter((fam) => !fams.has(fam)).map((fam) => library.templates.find((t) => t.family === fam)?.displayName || fam);
+      deal.families = [...fams];
+      out.push(deal);
+    }
+    return out;
+  }
+  function guessLastName(docs) {
+    // Look for "BUYER" / "PURCHASER" / "LESSEE" / "APPLICANT" followed by a name in the text layer or OCR.
+    for (const doc of docs) for (const p of doc.pages) {
+      const txt = (p.features.textLayer?.words || p.features.ocrFull?.words || []).map((w) => w.text).join(' ');
+      const m = /(?:BUYER|PURCHASER|LESSEE|APPLICANT|CUSTOMER)(?:\s+NAME)?\s*[:.-]?\s*([A-Z][A-Za-z'-]+)\s*,?\s+([A-Z][A-Za-z'-]+)/.exec(txt);
+      if (m) {
+        const a = m[1].toUpperCase(), b = m[2].toUpperCase();
+        if (/^(NAME|SIGNATURE|DATE|ADDRESS|CO)$/.test(a)) continue;
+        // "LAST, FIRST" if comma present, else "FIRST LAST"
+        return /,/.test(m[0]) ? a : b;
+      }
+    }
+    return 'UNKNOWN';
+  }
+
+  /* ---------- routing ---------- */
+  function sanitize(s) { return (s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'X'; }
+  function dealFolderName(deal, settings) {
+    return settings.folders.dealFolder.replace('<VIN>', deal.vin || 'NOVIN').replace('<LastName>', sanitize(deal.lastName)).replace('<DealType>', deal.dealType || (deal.ambiguousType ? 'AMBIGUOUS' : 'UNTYPED'));
+  }
+  /* Produce the write plan: [{path, pages:[pageIndex...], kind}] plus manifests. */
+  function plan(deals, docs, pages, library, settings) {
+    const files = [];
+    const rev = settings.folders.reviewFolder, dupF = settings.folders.duplicatesFolder;
+    const dupPages = pages.filter((p) => p.dup !== null && p.dup !== undefined);
+    const counters = new Map();
+    const nextName = (dir, base) => { const k = dir + '/' + base; const n = (counters.get(k) || 0) + 1; counters.set(k, n); return n === 1 ? base : `${base}_${n}`; };
+    const manifests = [];
+    for (const deal of deals) {
+      const root = dealFolderName(deal, settings);
+      const manifest = { vin: deal.vin, dealType: deal.dealType, ambiguousType: deal.ambiguousType, lastName: deal.lastName, folder: root,
+                         documents: [], missing: deal.missing, generatedAt: new Date().toISOString(), libraryVersion: library.versionHash() };
+      for (const doc of deal.docs) {
+        const tpl = doc.templateId ? library.byId(doc.templateId) : null;
+        const pgs = doc.pages.filter((p) => p.dup === null || p.dup === undefined);
+        if (!pgs.length) continue;
+        const review = doc.state === 'UNKNOWN' || deal.ambiguousType || !deal.vin;
+        const dir = review ? `${root}/${rev}` : `${root}/${tpl?.routing.folder || '99_Other'}`;
+        const base = nextName(dir, tpl ? `${tpl.id}${doc.state === 'LIKELY' ? '_LIKELY' : ''}` : 'UNKNOWN');
+        const path = `${dir}/${base}.pdf`;
+        files.push({ path, pages: pgs.map((p) => p.pageIndex), kind: review ? 'review' : 'doc', docId: doc.id });
+        manifest.documents.push({ file: path, templateId: doc.templateId, displayName: tpl?.displayName || null, state: doc.state,
+          sourcePages: pgs.map((p) => p.pageIndex + 1), vin: doc.vin, vinPropagated: doc.vinPropagated || null,
+          decisions: pgs.map((p) => ({ page: p.pageIndex + 1, state: p.decision.state, templateId: p.decision.templateId, score: p.decision.score, margin: p.decision.margin, rung: p.decision.rung,
+            override: p.override || null, topCandidates: p.decision.candidates.slice(0, 3).map((c) => ({ templateId: c.templateId, total: c.total })) })) });
+        if (review) {
+          for (const p of pgs) manifest.documents[manifest.documents.length - 1].reviewNotes = p.decision.notes;
+        }
+      }
+      files.push({ path: `${root}/manifest.json`, text: JSON.stringify(manifest, null, 2), kind: 'manifest' });
+      const missingTxt = (deal.missing.length ? deal.missing.map((m) => `- ${m}`).join('\n') : 'Nothing missing.') +
+        (deal.dealType ? '' : '\n\n(Deal type could not be determined; checklist not applied.)');
+      files.push({ path: `${root}/MISSING.txt`, text: `Missing for ${deal.dealType || 'unknown deal type'} deal ${deal.vin || ''}:\n${missingTxt}\n`, kind: 'missing' });
+      manifests.push(manifest);
+    }
+    if (dupPages.length) {
+      const byDeal = new Map();
+      for (const p of dupPages) {
+        const doc = docs.find((d) => d.pages.includes(p));
+        const deal = deals.find((dl) => dl.docs.includes(doc));
+        const root = deal ? dealFolderName(deal, settings) : '_Unassigned';
+        if (!byDeal.has(root)) byDeal.set(root, []);
+        byDeal.get(root).push(p.pageIndex);
+      }
+      for (const [root, pg] of byDeal) files.push({ path: `${root}/${dupF}/duplicates.pdf`, pages: pg, kind: 'dup' });
+    }
+    return { files, manifests };
+  }
+
+  /* ---------- writer ---------- */
+  async function buildPdf(srcDoc, pageIndexes) {
+    const { PDFDocument } = window.PDFLib;
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(srcDoc, pageIndexes);
+    for (const p of copied) out.addPage(p);
+    return out.save({ useObjectStreams: false });
+  }
+  async function writeAll(files, srcBytes, { directory, onProgress } = {}) {
+    const { PDFDocument } = window.PDFLib;
+    const src = await PDFDocument.load(srcBytes, { ignoreEncryption: true, updateMetadata: false });
+    const outputs = [];
+    let i = 0;
+    for (const f of files) {
+      const data = f.text !== undefined ? new TextEncoder().encode(f.text) : await buildPdf(src, f.pages);
+      outputs.push({ path: f.path, data });
+      onProgress?.(++i, files.length, f.path);
+    }
+    if (directory) {
+      for (const o of outputs) {
+        const parts = o.path.split('/');
+        let dir = directory;
+        for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part, { create: true });
+        const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
+        const w = await fh.createWritable();
+        await w.write(o.data);
+        await w.close();
+      }
+      return { mode: 'directory', count: outputs.length };
+    }
+    const zip = new window.JSZip();
+    for (const o of outputs) zip.file(o.path, o.data);
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
+    return { mode: 'zip', blob, count: outputs.length };
+  }
+
+  return { vinCheckDigit, vinValid, repairVin, extractVins, segment, markDuplicates, groupDeals, plan, writeAll, buildPdf, dealFolderName, continuationInfo };
+})();
+
+</script>
+<script>
+/* ---- e-rca.js ---- */
+/* =====================================================================
+ * RCA: decision log, corrections → exemplar learning, failure taxonomy,
+ * regression harness, drift alarms, redacted export.
+ * Uses Infra, Knowledge (library) and Reasoner (replay). Never Policy.
+ * ===================================================================== */
+DS.RCA = (() => {
+  'use strict';
+  const { Store, uid, round, hamming64 } = DS.Infra;
+  const { lib } = DS.Knowledge;
+
+  /* ---------- feature records (redacted) ----------
+   * Stored per confirmed page so the reasoner can be replayed without PDFs
+   * and shared without PII: text is reduced to anchor-hit records.
+   */
+  function redactFeatures(features) {
+    const strip = (src) => src ? { words: [], quality: src.quality, meanConf: src.meanConf, text: '', wordCount: src.words?.length || 0 } : null;
+    return {
+      quality: features.quality, fingerprint: features.fingerprint, textHash: features.textHash, pageHash: features.pageHash,
+      textLayer: strip(features.textLayer), ocrHeader: strip(features.ocrHeader), ocrFooter: strip(features.ocrFooter), ocrFull: strip(features.ocrFull),
+      redacted: true,
+    };
+  }
+  /* Confirmed-page records keep the page's text and features so the reasoner
+   * can be replayed against a changed library. They stay in this browser's
+   * IndexedDB (like the OCR cache); the exported log is what gets redacted.
+   */
+  function makeRecord(pageIndex, features, decision, label, batchId) {
+    const { thumb, ...feat } = features;
+    return { id: uid(), pageIndex, batchId, label, features: feat, rung: decision.rung,
+             decision: { state: decision.state, templateId: decision.templateId, score: decision.score, margin: decision.margin, rung: decision.rung },
+             at: new Date().toISOString() };
+  }
+
+  /* Replay one record through the real reasoner. */
+  function replayRecord(rec, library, thresholds) {
+    const d = DS.Reasoner.replay({ ...rec.features, pageIndex: rec.pageIndex, rung: rec.rung }, library, thresholds);
+    return { state: d.state, templateId: d.templateId, score: d.score, margin: d.margin };
+  }
+
+  /* ---------- regression harness ---------- */
+  async function evaluate(library, thresholds) {
+    const recs = await Store.getAll('confirmed').catch(() => []);
+    const perTemplate = {};
+    let unknown = 0, correct = 0, confidentWrong = 0, confident = 0;
+    const flips = [];
+    for (const r of recs) {
+      const out = replayRecord(r, library, thresholds);
+      const t = perTemplate[r.label] || (perTemplate[r.label] = { label: r.label, n: 0, confidentCorrect: 0, confidentWrong: 0, likelyCorrect: 0, unknown: 0 });
+      t.n++;
+      if (out.state === 'UNKNOWN') { unknown++; t.unknown++; }
+      else if (out.templateId === r.label) { correct++; if (out.state === 'CONFIDENT') { t.confidentCorrect++; confident++; } else t.likelyCorrect++; }
+      else if (out.state === 'CONFIDENT') { confidentWrong++; confident++; t.confidentWrong++; flips.push({ pageIndex: r.pageIndex, batchId: r.batchId, label: r.label, got: out.templateId }); }
+      if (r.decision.state === 'CONFIDENT' && r.decision.templateId === r.label && out.templateId !== r.label) {
+        if (!flips.some((f) => f.pageIndex === r.pageIndex && f.batchId === r.batchId)) flips.push({ pageIndex: r.pageIndex, batchId: r.batchId, label: r.label, got: out.templateId, from: 'CONFIDENT-correct' });
+      }
+    }
+    const precision = confident ? (confident - confidentWrong) / confident : 1;
+    const recall = recs.length ? correct / recs.length : 1;
+    return { n: recs.length, precision: round(precision), recall: round(recall), unknown, confidentWrong, flips, perTemplate: Object.values(perTemplate) };
+  }
+  /* Guard a library/threshold change. Replays every confirmed page before and
+   * after; the change is refused when any page that was classified correctly
+   * would flip to wrong or unknown, or when precision drops. Returns the
+   * flipped pages so the user sees exactly what the change would break.
+   */
+  async function perRecord(library, thresholds) {
+    const recs = await Store.getAll('confirmed').catch(() => []);
+    return recs.map((r) => { const out = replayRecord(r, library, thresholds); return { key: `${r.batchId}:${r.pageIndex}`, pageIndex: r.pageIndex, batchId: r.batchId, label: r.label, ...out, correct: out.state !== 'UNKNOWN' && out.templateId === r.label }; });
+  }
+  async function guardChange(applyFn) {
+    const before = await evaluate(lib, lib.settings.thresholds);
+    const beforeRows = await perRecord(lib, lib.settings.thresholds);
+    const snapshot = { templates: JSON.parse(JSON.stringify(lib.templates)), thresholds: { ...lib.settings.thresholds }, dealTypes: JSON.parse(JSON.stringify(lib.dealTypes)) };
+    await applyFn();
+    const after = await evaluate(lib, lib.settings.thresholds);
+    const afterRows = await perRecord(lib, lib.settings.thresholds);
+    const flipped = [];
+    for (let i = 0; i < beforeRows.length; i++) {
+      const b = beforeRows[i], a = afterRows.find((x) => x.key === b.key);
+      if (b.correct && a && !a.correct) flipped.push({ pageIndex: b.pageIndex, batchId: b.batchId, label: b.label, was: b.state, now: a.state, got: a.templateId });
+    }
+    const ok = after.precision >= before.precision && flipped.length === 0;
+    return { ok, before, after, flipped, revert: () => { lib.templates = snapshot.templates; lib.settings.thresholds = snapshot.thresholds; lib.dealTypes = snapshot.dealTypes; } };
+  }
+
+  /* ---------- corrections ---------- */
+  const CATEGORIES = ['Perception', 'Feature', 'Knowledge', 'Reasoning', 'Segmentation', 'Grouping', 'Policy'];
+  /* Auto-classify why a decision was wrong, from its ledger. */
+  function classifyFailure(decision, features, correctTemplateId, library) {
+    const reasons = [];
+    const top = decision.candidates[0];
+    const right = decision.candidates.find((c) => c.templateId === correctTemplateId);
+    const tl = features.textLayer;
+    if (tl && tl.quality.score < 0.45 && decision.textSources.some((v) => v.source === 'textLayer' && v.trusted)) reasons.push(['Perception', 'garbage text layer was trusted']);
+    if (Math.abs(features.quality?.skewDeg || 0) > 2.5) reasons.push(['Perception', `skew ${features.quality.skewDeg}° may not be fully corrected`]);
+    const ocrConf = features.ocrFull?.meanConf ?? features.ocrHeader?.meanConf;
+    if (ocrConf !== undefined && ocrConf < 0.55 && decision.rung.startsWith('OCR')) reasons.push(['Perception', `OCR confidence ${ocrConf} below threshold`]);
+    if (!right) reasons.push(['Knowledge', `template ${correctTemplateId} not in candidates (missing or disabled)`]);
+    else {
+      if (right.evidence.anchor <= 0 && (tl?.quality.score >= 0.45 || (ocrConf ?? 0) >= 0.55)) reasons.push(['Knowledge', 'anchors did not match readable text: revision changed wording or anchor missing']);
+      if (top && top.templateId !== correctTemplateId && top.evidence.anchor > 0 && right.evidence.anchor > 0) reasons.push(['Knowledge', `anchors of ${top.templateId} also match this page: add a negative anchor`]);
+      const tpl = library.byId(correctTemplateId);
+      if (tpl && tpl.exemplars.length < 2) reasons.push(['Knowledge', `template has ${tpl.exemplars.length} exemplar(s): layout evidence unavailable`]);
+      if (top && right && features.fingerprint && library.byId(top.templateId)?.exemplars.length && tpl?.exemplars.length) {
+        const dTop = top.detail?.layout?.hamming, dRight = right.detail?.layout?.hamming;
+        if (dTop !== undefined && dRight !== undefined && Math.abs(dTop - dRight) <= 4) reasons.push(['Feature', `fingerprints collide: hamming ${dTop} vs ${dRight}`]);
+      }
+      if (decision.state === 'CONFIDENT' && top.templateId !== correctTemplateId) reasons.push(['Reasoning', `confident-wrong: margin ${decision.margin}, families ${decision.agreeingFamilies.join('+')}`]);
+      if (decision.state !== 'CONFIDENT' && top.templateId === correctTemplateId) reasons.push(['Reasoning', `right template on top but abstained: ${decision.notes.join('; ')}`]);
+    }
+    if (!reasons.length) reasons.push(['Reasoning', 'evidence combination did not favour the correct template']);
+    return { category: reasons[0][0], reasons: reasons.map((r) => `${r[0]}: ${r[1]}`) };
+  }
+
+  /* Record a correction/confirmation and learn from it. */
+  async function applyCorrection({ pageIndex, batchId, features, decision, templateId, kind }) {
+    const wasCorrect = decision.templateId === templateId && decision.state !== 'UNKNOWN';
+    const failure = wasCorrect ? null : classifyFailure(decision, features, templateId, lib);
+    const rec = makeRecord(pageIndex, features, decision, templateId, batchId);
+    await Store.put('confirmed', `${batchId}:${pageIndex}`, rec);
+    let learned = null;
+    if (features.fingerprint) {
+      const before = lib.byId(templateId)?.exemplars.map((e) => e.id) || [];
+      const r = lib.addExemplar(templateId, features.fingerprint, { fromPage: pageIndex, batchId });
+      learned = { added: r.added?.id || null, dropped: r.dropped?.id || null, reason: r.reason || null, before, after: lib.byId(templateId).exemplars.map((e) => e.id) };
+      await Store.put('exemplarHistory', uid(), { templateId, ...learned, at: new Date().toISOString(), pageIndex, batchId });
+      await lib.save();
+    }
+    const correction = { id: uid(), at: new Date().toISOString(), batchId, pageIndex, kind, from: { state: decision.state, templateId: decision.templateId }, to: templateId,
+                         failure, ledger: decision.candidates.map((c) => ({ templateId: c.templateId, total: c.total, evidence: c.evidence })), rung: decision.rung, thresholds: decision.thresholds, libraryVersion: decision.libraryVersion };
+    await Store.put('corrections', correction.id, correction);
+    return { correction, learned, failure };
+  }
+  async function undoLearning(historyId) {
+    const h = await Store.get('exemplarHistory', historyId);
+    if (!h) return false;
+    if (h.added) lib.removeExemplar(h.templateId, h.added);
+    await lib.save();
+    await Store.del('exemplarHistory', historyId);
+    return true;
+  }
+
+  /* ---------- decision log ---------- */
+  async function logDecisions(batchId, decisions, featuresList, meta) {
+    const entries = decisions.map((d, i) => ({ ...d, pageHash: featuresList[i]?.pageHash, textHash: featuresList[i]?.textHash, fingerprint: featuresList[i]?.fingerprint }));
+    await Store.put('decisions', batchId, { batchId, at: new Date().toISOString(), meta, entries });
+  }
+  /* Export the log with content redacted: keeps hashes, boxes, scores and anchor names; strips word text. */
+  async function exportRedactedLog(batchId) {
+    const rec = batchId ? [await Store.get('decisions', batchId)] : await Store.getAll('decisions');
+    const corr = await Store.getAll('corrections');
+    const clean = (rec || []).filter(Boolean).map((b) => ({ ...b, entries: b.entries.map((e) => ({ ...e, candidates: e.candidates.map((c) => ({ ...c, detail: c.detail ? { ...c.detail, anchor: (c.detail.anchor || []).map((h) => ({ anchor: h.text, zone: h.zone, sim: h.sim, source: h.source, contribution: h.contribution })), negative: (c.detail.negative || []).map((h) => ({ anchor: h.text, sim: h.sim, contribution: h.contribution })) } : null })) })) }));
+    return JSON.stringify({ format: 'dealsplit-log', redacted: true, exportedAt: new Date().toISOString(), batches: clean, corrections: corr, libraryVersion: lib.versionHash() }, null, 2);
+  }
+
+  /* ---------- drift ---------- */
+  async function driftReport(currentBatch) {
+    const all = (await Store.getAll('decisions').catch(() => [])).filter((b) => b.batchId !== currentBatch.batchId);
+    const hist = {};
+    let histEsc = 0, histN = 0;
+    for (const b of all) for (const e of b.entries) {
+      histN++; if (e.rung.startsWith('OCR')) histEsc++;
+      if (e.state === 'CONFIDENT') (hist[e.templateId] = hist[e.templateId] || []).push(e.score);
+    }
+    const alarms = [];
+    const cur = {};
+    let curEsc = 0;
+    for (const e of currentBatch.entries) { if (e.rung.startsWith('OCR')) curEsc++; if (e.state === 'CONFIDENT') (cur[e.templateId] = cur[e.templateId] || []).push({ score: e.score, page: e.pageIndex + 1 }); }
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length); };
+    for (const [tid, list] of Object.entries(cur)) {
+      const h = hist[tid];
+      if (!h || h.length < 8 || list.length < 3) continue;
+      const hm = mean(h), hs = Math.max(0.5, sd(h));
+      const cm = mean(list.map((x) => x.score));
+      if (cm < hm - 1.2 * hs) {
+        const low = list.filter((x) => x.score < hm - hs).map((x) => x.page);
+        alarms.push({ templateId: tid, message: `Scanner or form revision may have changed: ${low.length} ${tid} pages scored lower than usual (mean ${round(cm, 1)} vs ${round(hm, 1)})`, pages: low });
+      }
+    }
+    if (histN >= 40) {
+      const hr = histEsc / histN, cr = curEsc / Math.max(1, currentBatch.entries.length);
+      if (cr > hr * 1.8 + 0.1) alarms.push({ templateId: null, message: `OCR escalation rate jumped: ${round(cr * 100, 0)}% of pages needed OCR (usually ${round(hr * 100, 0)}%)`, pages: [] });
+    }
+    return alarms;
+  }
+
+  async function failureCounts() {
+    const corr = await Store.getAll('corrections').catch(() => []);
+    const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
+    for (const c of corr) if (c.failure) counts[c.failure.category] = (counts[c.failure.category] || 0) + 1;
+    return { counts, total: corr.length, wrong: corr.filter((c) => c.failure).length };
+  }
+
+  return { makeRecord, replayRecord, evaluate, guardChange, classifyFailure, applyCorrection, undoLearning, logDecisions, exportRedactedLog, driftReport, failureCounts, CATEGORIES, redactFeatures };
+})();
+
+</script>
+<script>
+/* ---- f-app.js ---- */
+/* =====================================================================
+ * App: orchestration (drives the layers per page) and the UI.
+ * ===================================================================== */
+DS.App = (() => {
+  'use strict';
+  const { now, round, uid, Store, deepFreeze } = DS.Infra;
+  const P = DS.Perception, K = DS.Knowledge, R = DS.Reasoner, Pol = DS.Policy, RCA = DS.RCA;
+  const lib = K.lib;
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- library loading (pinned CDN, overridable for self-hosting) ---------- */
+  const DEFAULT_LIBS = {
+    pdfjs: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs',
+    pdfjsWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs',
+    tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+    tesseractWorker: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+    tesseractCore: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+    tesseractLang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int',
+    pdflib: 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+    jszip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+  };
+  let LIBS = { ...DEFAULT_LIBS, ...(window.DEALSPLIT_LIBS || {}) };
+  try { LIBS = { ...LIBS, ...JSON.parse(localStorage.getItem('dealsplit.libs') || '{}') }; } catch { /* ignore */ }
+
+  const loadScript = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('failed to load ' + src)); document.head.appendChild(s); });
+  let pdfjs = null;
+  async function loadLibs(status) {
+    status('Loading pdf.js…');
+    pdfjs = await import(LIBS.pdfjs);
+    pdfjs.GlobalWorkerOptions.workerSrc = LIBS.pdfjsWorker;
+    status('Loading pdf-lib and JSZip…');
+    await Promise.all([loadScript(LIBS.pdflib), loadScript(LIBS.jszip)]);
+    status('Loading tesseract.js…');
+    await loadScript(LIBS.tesseract);
+    P.ocrPool.configure({ tesseractOptions: { workerPath: LIBS.tesseractWorker, corePath: LIBS.tesseractCore, langPath: LIBS.tesseractLang } });
+    status('');
+  }
+
+  /* ---------- network monitor ---------- */
+  const net = { entries: [], loadedAt: 0 };
+  function watchNetwork() {
+    try {
+      const po = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) net.entries.push({ url: e.name, at: round(e.startTime, 0), type: e.initiatorType, afterLoad: net.loadedAt && e.startTime > net.loadedAt });
+        renderNetwork();
+      });
+      po.observe({ type: 'resource', buffered: true });
+    } catch { /* ignore */ }
+  }
+
+  /* ---------- state ---------- */
+  const state = {
+    file: null, bytes: null, pdf: null, pageCount: 0, batchId: null,
+    pages: [],            // {pageIndex, thumb, features, decision, vins, dup, override, expectedMax}
+    docs: [], deals: [], planResult: null, running: false, cancel: false,
+    dirHandle: null, drift: [], stats: {},
+  };
+
+  /* ---------- perception per page (the ladder's callback) ---------- */
+  async function perceiveFactory(pageIndex) {
+    const page = await state.pdf.getPage(pageIndex + 1);
+    let r72 = null, r150 = null, gray = null;
+    const features = { pageIndex, quality: {} };
+    const render150 = async () => { if (!r150) r150 = await P.renderPage(page, 150); return r150; };
+    const setTextHash = () => {
+      const tl = features.textLayer, ok = tl && tl.quality.score >= lib.settings.thresholds.textQualityMin;
+      const txt = ok ? tl.text : (features.ocrFull?.text || features.ocrHeader?.text || '');
+      features.textHash = txt ? P.textHash(txt) : null;
+    };
+    return async (need) => {
+      if (need === 'textLayer') {
+        features.textLayer = await P.extractTextLayer(page);
+        features.quality.textLayer = features.textLayer.quality.score;
+        setTextHash();
+      } else if (need === 'fingerprint') {
+        if (!features.fingerprint) {
+          r72 = await P.renderPage(page, 72);
+          gray = P.grayscale(r72.canvas);
+          features.pageHash = await P.pageHash(gray);
+          const pre = P.preprocess(gray);
+          features.fingerprint = P.fingerprint(pre);
+          features.quality.skewDeg = pre.skewDeg; features.quality.inkCoverage = pre.inkCoverage;
+          features.timing = { render72: round(r72.ms, 1), preprocess: round(pre.ms, 1), fingerprint: features.fingerprint.ms };
+          features.thumb = await thumbnail(r72.canvas);
+        }
+      } else if (need === 'ocrStrips') {
+        const r = await render150();
+        const s = P.strips(r.canvas, features.fingerprint?.contentBox);
+        const [h, f] = await Promise.all([P.ocrPool.recognize(r.canvas, s.header, features.pageHash), P.ocrPool.recognize(r.canvas, s.footer, features.pageHash)]);
+        features.ocrHeader = h; features.ocrFooter = f;
+        features.quality.ocrConf = round((h.meanConf + f.meanConf) / 2);
+        setTextHash();
+      } else if (need === 'ocrFull') {
+        const r = await render150();
+        features.ocrFull = await P.ocrPool.recognize(r.canvas, null, features.pageHash);
+        features.quality.ocrConf = features.ocrFull.meanConf;
+        setTextHash();
+      }
+      return features;
+    };
+  }
+  async function thumbnail(canvas) {
+    const w = 120, h = Math.round(canvas.height * w / canvas.width);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.6);
+  }
+
+  /* ---------- pipeline ---------- */
+  async function loadPdf(bytes, name) {
+    state.bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    state.file = name || 'input.pdf';
+    state.pdf = await pdfjs.getDocument({ data: state.bytes.slice(), isEvalSupported: false }).promise;
+    state.pageCount = state.pdf.numPages;
+    state.pages = []; state.docs = []; state.deals = []; state.planResult = null; state.drift = [];
+    state.batchId = uid();
+    ui.onLoaded();
+    return state.pageCount;
+  }
+
+  async function run({ onProgress } = {}) {
+    if (!state.pdf) throw new Error('no PDF loaded');
+    state.running = true; state.cancel = false;
+    state.batchId = uid();               // every run is its own batch in the log
+    const t0 = now();
+    const th = lib.settings.thresholds;
+    const n = state.pageCount;
+    const results = new Array(n);
+    let done = 0;
+    const conc = Math.max(1, Math.min(3, (lib.settings.ocrWorkers | 0) + 1));
+    P.ocrPool.size = lib.settings.ocrWorkers;
+    const worker = async (start) => {
+      for (let i = start; i < n; i += conc) {
+        if (state.cancel) return;
+        const perceive = await perceiveFactory(i);
+        const { decision, features } = await R.classifyPage(i, perceive, lib, th, (k, m) => console.warn('[reasoner]', k, m));
+        if (!features.fingerprint) await perceive('fingerprint');   // needed for duplicates + exemplars
+        results[i] = { pageIndex: i, features, decision, thumb: features.thumb };
+        done++;
+        onProgress?.({ done, total: n, page: i + 1, rung: decision.rung, state: decision.state });
+        ui.onPage(results[i]);
+      }
+    };
+    await Promise.all(Array.from({ length: conc }, (_, k) => worker(k)));
+    if (state.cancel) { state.running = false; return null; }
+    // Second pass: context.
+    const decisions = R.contextPass(results.map((r) => r.decision), results.map((r) => r.features), lib, th);
+    for (let i = 0; i < n; i++) { results[i].decision = decisions[i]; results[i].vins = Pol.extractVins(results[i].features, i); results[i].expectedMax = decisions[i].templateId ? lib.byId(decisions[i].templateId)?.expectedPages.max : 1; }
+    state.pages = results;
+    await assemble();
+    state.stats = { ms: round(now() - t0, 0), perPage: round((now() - t0) / n, 0), ocr: { ...P.ocrPool.stats },
+                    rungs: countBy(results, (r) => r.decision.rung.replace('+CTX', '')), states: countBy(results, (r) => r.decision.state) };
+    await RCA.logDecisions(state.batchId, decisions, results.map((r) => r.features), { file: state.file, pages: n, stats: state.stats });
+    state.drift = await RCA.driftReport({ batchId: state.batchId, entries: decisions.map((d, i) => ({ ...d, pageIndex: i })) }).catch(() => []);
+    state.running = false;
+    ui.onRunDone();
+    return state.stats;
+  }
+  const countBy = (arr, f) => arr.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {});
+
+  /* Segmentation → grouping → plan. Re-run after corrections. */
+  async function assemble() {
+    const pages = state.pages.map((p) => ({ ...p, decision: p.override ? overrideDecision(p) : p.decision }));
+    Pol.markDuplicates(pages);
+    for (let i = 0; i < pages.length; i++) state.pages[i].dup = pages[i].dup;
+    state.docs = Pol.segment(pages);
+    state.deals = Pol.groupDeals(state.docs, lib);
+    state.planResult = Pol.plan(state.deals, state.docs, pages, lib, lib.settings);
+    ui.onAssembled();
+  }
+  /* Policy may override routing; it records the reason and never mutates the decision. */
+  function overrideDecision(p) {
+    const tpl = lib.byId(p.override.templateId);
+    return deepFreeze({ ...p.decision, state: 'CONFIDENT', templateId: p.override.templateId, family: tpl?.family || null, overrideReason: p.override.reason, original: { state: p.decision.state, templateId: p.decision.templateId } });
+  }
+
+  /* ---------- corrections ---------- */
+  async function confirm(pageIndex, templateId, kind = 'correct') {
+    const p = state.pages[pageIndex];
+    if (!p) throw new Error('no such page');
+    const res = await RCA.applyCorrection({ pageIndex, batchId: state.batchId, features: p.features, decision: p.decision, templateId, kind });
+    p.override = { templateId, reason: kind === 'confirm' ? 'user confirmed' : 'user corrected', at: new Date().toISOString(), learned: res.learned };
+    await assemble();
+    return res;
+  }
+  async function createTemplateFromPage(pageIndex, { id, displayName, family, folder, requiredFor, anchors }) {
+    const p = state.pages[pageIndex];
+    const t = { id, displayName, family: family || id, folder, routing: { folder, requiredFor: requiredFor || [] },
+                anchors: (anchors || []).map((a) => ({ text: a.text, zone: a.zone || 'header', weight: a.weight || 2, fuzzy: 0.85 })), negatives: [], exemplars: [] };
+    lib.upsertTemplate(t);
+    for (const rf of requiredFor || []) { const dt = lib.dealTypes[rf]; if (dt && !dt.required.includes(t.family)) dt.required.push(t.family); }
+    await lib.save();
+    return confirm(pageIndex, id, 'new-type');
+  }
+  /* Candidate anchors for a new template: distinctive header/footer phrases. */
+  function suggestAnchors(features) {
+    const box = features.fingerprint?.contentBox;
+    const views = R.buildTextView(features, { textQualityMin: 0.3, ocrConfMin: 0.4 });
+    const out = [];
+    for (const v of views) {
+      for (const zone of ['header', 'footer']) {
+        const t = v.zoneText[zone];
+        if (!t) continue;
+        const words = t.split(' ').filter((w) => w.length > 2);
+        for (let i = 0; i < words.length && out.length < 12; i += 3) {
+          const phrase = words.slice(i, i + 3).join(' ');
+          if (phrase.length >= 8 && !out.some((o) => o.text === phrase)) out.push({ text: phrase, zone, weight: zone === 'footer' && /\d/.test(phrase) ? 4 : 2 });
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------- writing ---------- */
+  async function write({ directory } = {}) {
+    if (!state.planResult) throw new Error('nothing planned');
+    const res = await Pol.writeAll(state.planResult.files, state.bytes, { directory: directory || state.dirHandle, onProgress: (i, n, path) => ui.status(`Writing ${i}/${n}: ${path}`) });
+    if (res.mode === 'zip') {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(res.blob);
+      a.download = (state.file || 'deals').replace(/\.pdf$/i, '') + '_split.zip';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+    ui.status(`Wrote ${res.count} files (${res.mode}).`);
+    return res;
+  }
+  /* Manual split: ranges like "1-3 RISC, 4 Odometer, 5-8" → files. */
+  function parseRanges(text, n) {
+    const files = [];
+    for (const part of text.split(/[,\n;]+/)) {
+      const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s*(.*?)\s*$/.exec(part);
+      if (!m) continue;
+      const a = Math.max(1, +m[1]), b = Math.min(n, +(m[2] || m[1]));
+      if (a > b) continue;
+      const name = (m[3] || `pages_${a}-${b}`).replace(/[^A-Za-z0-9_-]+/g, '_');
+      const pages = []; for (let i = a; i <= b; i++) pages.push(i - 1);
+      files.push({ path: `manual/${name}.pdf`, pages, kind: 'manual' });
+    }
+    return files;
+  }
+  async function writeManual(text, { directory } = {}) {
+    const files = parseRanges(text, state.pageCount);
+    if (!files.length) throw new Error('no valid ranges');
+    const res = await Pol.writeAll(files, state.bytes, { directory: directory || state.dirHandle });
+    if (res.mode === 'zip') { const a = document.createElement('a'); a.href = URL.createObjectURL(res.blob); a.download = 'manual_split.zip'; a.click(); }
+    return res;
+  }
+
+  /* =====================================================================
+   * UI
+   * ===================================================================== */
+  const ui = {
+    status(msg) { const el = $('status'); if (el) el.textContent = msg || ''; },
+    onLoaded() {
+      $('fileInfo').textContent = `${state.file}: ${state.pageCount} pages`;
+      $('btnRun').disabled = false; $('btnManual').disabled = false;
+      $('pages').innerHTML = '';
+      for (let i = 0; i < state.pageCount; i++) {
+        const d = document.createElement('div'); d.className = 'pg'; d.id = 'pg' + i;
+        d.innerHTML = `<div class="th"></div><div class="pn">p.${i + 1}</div><div class="lbl">–</div>`;
+        d.addEventListener('click', () => inspector.open(i));
+        $('pages').appendChild(d);
+      }
+      $('summary').innerHTML = '';
+      $('results').innerHTML = '';
+    },
+    onPage(r) {
+      const el = $('pg' + r.pageIndex); if (!el) return;
+      el.querySelector('.th').innerHTML = r.thumb ? `<img src="${r.thumb}" alt="">` : '';
+      this.paintLabel(r.pageIndex);
+    },
+    paintLabel(i) {
+      const p = state.pages[i] || null; const el = $('pg' + i); if (!el) return;
+      const d = p ? (p.override ? { state: 'CONFIDENT', templateId: p.override.templateId } : p.decision) : null;
+      if (!d) return;
+      const lbl = el.querySelector('.lbl');
+      lbl.textContent = (d.templateId || 'UNKNOWN') + (p?.override ? ' ✎' : '') + (p?.dup !== null && p?.dup !== undefined ? ' (dup)' : '');
+      el.className = 'pg st-' + d.state;
+    },
+    onRunDone() {
+      for (let i = 0; i < state.pages.length; i++) this.paintLabel(i);
+      const s = state.stats;
+      $('summary').innerHTML = `<div class="stats">
+        <div class="stat"><div class="k">Pages</div><div class="v">${state.pageCount}</div></div>
+        <div class="stat"><div class="k">Confident</div><div class="v ok">${s.states.CONFIDENT || 0}</div></div>
+        <div class="stat"><div class="k">Likely</div><div class="v warn">${s.states.LIKELY || 0}</div></div>
+        <div class="stat"><div class="k">Unknown</div><div class="v bad">${s.states.UNKNOWN || 0}</div></div>
+        <div class="stat"><div class="k">Time</div><div class="v">${(s.ms / 1000).toFixed(1)} s</div><div class="k">${s.perPage} ms/page</div></div>
+        <div class="stat"><div class="k">Decided by</div><div class="k">${Object.entries(s.rungs).map(([k, v]) => `${k}: ${v}`).join(' · ')}</div></div>
+        <div class="stat"><div class="k">OCR</div><div class="k">${s.ocr.jobs} jobs, ${s.ocr.cacheHits} cached, ${(s.ocr.ms / 1000).toFixed(1)} s</div></div>
+      </div>` + (state.drift.length ? `<div class="alarm">${state.drift.map((a) => `⚠ ${a.message}${a.pages.length ? ' (pages ' + a.pages.join(', ') + ')' : ''}`).join('<br>')}</div>` : '');
+      $('btnWrite').disabled = false;
+      this.renderReview();
+      rcaPanel.render();
+    },
+    onAssembled() {
+      for (let i = 0; i < state.pages.length; i++) this.paintLabel(i);
+      const rows = state.deals.map((d) => `<tr><td>${d.vin || '<i>no VIN</i>'}</td><td>${d.lastName}</td><td>${d.dealType || (d.ambiguousType ? '<b class="bad">ambiguous</b>' : '<i>untyped</i>')}</td>
+        <td>${d.docs.map((doc) => `${doc.templateId || 'UNKNOWN'}${doc.state !== 'CONFIDENT' ? ' <span class="' + (doc.state === 'LIKELY' ? 'warn' : 'bad') + '">(' + doc.state.toLowerCase() + ')</span>' : ''} p.${doc.pages.map((p) => p.pageIndex + 1).join(',')}`).join('<br>')}</td>
+        <td>${d.missing.length ? d.missing.join('<br>') : '<span class="ok">complete</span>'}</td></tr>`).join('');
+      $('results').innerHTML = `<table><tr><th>VIN</th><th>Last name</th><th>Deal type</th><th>Documents (source pages)</th><th>Missing</th></tr>${rows}</table>
+        <details><summary>Files to be written (${state.planResult.files.length})</summary><pre>${state.planResult.files.map((f) => f.path + (f.pages ? '  ← pages ' + f.pages.map((p) => p + 1).join(',') : '')).join('\n')}</pre></details>`;
+      this.renderReview();
+    },
+    renderReview() {
+      const q = state.pages.filter((p) => !p.override && p.decision.state !== 'CONFIDENT');
+      $('reviewCount').textContent = q.length ? `(${q.length})` : '';
+      const el = $('reviewList');
+      if (!q.length) { el.innerHTML = '<p class="muted">Nothing to review.</p>'; return; }
+      el.innerHTML = q.map((p) => {
+        const d = p.decision;
+        const opts = d.candidates.slice(0, 3).map((c) => `<button class="btn small" data-act="choose" data-page="${p.pageIndex}" data-tpl="${c.templateId}">${c.templateId} (${c.total})</button>`).join(' ');
+        return `<div class="rv st-${d.state}"><img src="${p.thumb || ''}" alt=""><div>
+          <div><b>Page ${p.pageIndex + 1}</b> · ${d.state} · top: ${d.templateId || d.candidates[0]?.templateId || '–'} · score ${d.score} · margin ${d.margin} · decided by ${d.rung}</div>
+          <div class="muted">${d.notes.join(' · ')}</div>
+          <div class="row">${opts} <select class="tplsel" data-page="${p.pageIndex}"><option value="">other template…</option>${lib.templates.map((t) => `<option value="${t.id}">${t.displayName}</option>`).join('')}</select>
+          <button class="btn small secondary" data-act="new" data-page="${p.pageIndex}">New document type</button>
+          <button class="btn small secondary" data-act="inspect" data-page="${p.pageIndex}">Inspect</button></div></div></div>`;
+      }).join('');
+    },
+  };
+
+  /* ---------- inspector ---------- */
+  const inspector = {
+    async open(i) {
+      const p = state.pages[i];
+      const m = $('inspector'); m.hidden = false;
+      $('insTitle').textContent = `Page ${i + 1}`;
+      $('insBody').innerHTML = '<p class="muted">Rendering…</p>';
+      const page = await state.pdf.getPage(i + 1);
+      const r = await P.renderPage(page, 72);
+      const gray = P.grayscale(r.canvas);
+      const pre = P.preprocess(gray);
+      const fp = p?.features?.fingerprint || P.fingerprint(pre);
+      const orig = document.createElement('canvas'); orig.width = r.width; orig.height = r.height; orig.getContext('2d').drawImage(r.canvas, 0, 0);
+      const bin = document.createElement('canvas'); bin.width = pre.w; bin.height = pre.h;
+      const bctx = bin.getContext('2d'); const img = bctx.createImageData(pre.w, pre.h);
+      for (let k = 0; k < pre.bin.length; k++) { const v = pre.bin[k] ? 0 : 255; img.data[k * 4] = v; img.data[k * 4 + 1] = v; img.data[k * 4 + 2] = v; img.data[k * 4 + 3] = 255; }
+      bctx.putImageData(img, 0, 0);
+      const b = pre.box; const rw = b.x1 - b.x0, rh = b.y1 - b.y0;
+      bctx.strokeStyle = '#e33'; bctx.lineWidth = 1;
+      for (const l of fp.lineSig.h) { bctx.beginPath(); bctx.moveTo(b.x0 + l.x0 * rw, b.y0 + l.y * rh); bctx.lineTo(b.x0 + l.x1 * rw, b.y0 + l.y * rh); bctx.stroke(); }
+      bctx.strokeStyle = '#36c';
+      for (const l of fp.lineSig.v) { bctx.beginPath(); bctx.moveTo(b.x0 + l.x * rw, b.y0 + l.y0 * rh); bctx.lineTo(b.x0 + l.x * rw, b.y0 + l.y1 * rh); bctx.stroke(); }
+      bctx.strokeStyle = '#2a2'; bctx.strokeRect(b.x0, b.y0, rw, rh);
+      // OCR heat over the original
+      const octx = orig.getContext('2d');
+      const words = [...(p?.features?.ocrFull?.words || []), ...(p?.features?.ocrHeader?.words || []), ...(p?.features?.ocrFooter?.words || [])];
+      for (const w of words) { octx.fillStyle = `rgba(${Math.round(255 * (1 - w.conf))},${Math.round(200 * w.conf)},0,0.35)`; octx.fillRect(w.x * r.width, w.y * r.height, w.w * r.width, w.h * r.height); }
+      const tlw = p?.features?.textLayer?.words || [];
+      octx.strokeStyle = 'rgba(0,80,255,0.5)';
+      for (const w of tlw) octx.strokeRect(w.x * r.width, w.y * r.height, w.w * r.width, w.h * r.height);
+      const d = p?.decision;
+      let ledger = '<p class="muted">Not classified yet.</p>';
+      if (d) {
+        const fams = R.FAMILIES;
+        ledger = `<table><tr><th>Template</th>${fams.map((f) => `<th>${f}</th>`).join('')}<th>Total</th></tr>` +
+          d.candidates.map((c) => `<tr class="${c.templateId === d.templateId ? 'hl' : ''}"><td>${c.templateId}</td>${fams.map((f) => `<td>${c.evidence[f]}</td>`).join('')}<td><b>${c.total}</b></td></tr>`).join('') + '</table>' +
+          `<div class="muted">State <b>${d.state}</b>${p.override ? ' (overridden → ' + p.override.templateId + ')' : ''} · rung ${d.rung} · margin ${d.margin} · families ${d.agreeingFamilies.join('+') || '–'}<br>${d.notes.join(' · ')}</div>` +
+          `<details><summary>Anchor hits (top candidate)</summary><pre>${JSON.stringify(d.candidates[0]?.detail?.anchor || [], null, 1)}</pre></details>` +
+          `<details><summary>Layout / region detail</summary><pre>${JSON.stringify({ layout: d.candidates[0]?.detail?.layout, region: d.candidates[0]?.detail?.region, structure: d.candidates[0]?.detail?.structure }, null, 1)}</pre></details>`;
+      }
+      const q = p?.features?.quality || {};
+      $('insBody').innerHTML = `<div class="insgrid"><div><div class="muted">Original + OCR confidence (red = low) + text layer boxes (blue)</div></div><div><div class="muted">Binarized + detected rules + content box</div></div></div>
+        <div class="insgrid" id="insCanvases"></div>
+        <div class="stats">
+          <div class="stat"><div class="k">Skew</div><div class="v">${pre.skewDeg}°</div></div>
+          <div class="stat"><div class="k">Ink</div><div class="v">${pre.inkCoverage}</div></div>
+          <div class="stat"><div class="k">Text layer quality</div><div class="v">${q.textLayer ?? '–'}</div></div>
+          <div class="stat"><div class="k">OCR conf</div><div class="v">${q.ocrConf ?? '–'}</div></div>
+          <div class="stat"><div class="k">phash</div><div class="v mono">${fp.phash64}</div></div>
+          <div class="stat"><div class="k">Checkboxes</div><div class="v">${fp.checkboxDensity}</div></div>
+          <div class="stat"><div class="k">VINs</div><div class="v small">${(p?.vins || []).map((v) => (v.vin || v.raw) + (v.valid ? ' ✓' : ' ✗') + (v.repaired ? ' (repaired)' : '')).join('<br>') || '–'}</div></div>
+        </div>
+        <h3>Evidence ledger</h3>${ledger}
+        <div class="row">${d ? `<button class="btn" data-act="confirm" data-page="${i}" data-tpl="${d.templateId || ''}" ${d.templateId ? '' : 'disabled'}>Mark correct</button>` : ''}
+          <select class="tplsel" data-page="${i}"><option value="">Choose other…</option>${lib.templates.map((t) => `<option value="${t.id}">${t.displayName}</option>`).join('')}</select>
+          <button class="btn secondary" data-act="new" data-page="${i}">New document type</button></div>`;
+      $('insCanvases').append(orig, bin);
+    },
+  };
+
+  /* ---------- new template dialog ---------- */
+  async function newTypeDialog(pageIndex) {
+    const p = state.pages[pageIndex];
+    const sug = p ? suggestAnchors(p.features) : [];
+    const m = $('newtype'); m.hidden = false;
+    $('ntPage').textContent = String(pageIndex + 1);
+    $('ntName').value = ''; $('ntId').value = ''; $('ntFolder').value = '05_Compliance';
+    $('ntDeal').innerHTML = Object.entries(lib.dealTypes).map(([k, v]) => `<label><input type="checkbox" value="${k}"> ${v.displayName}</label>`).join(' ');
+    $('ntAnchors').innerHTML = sug.length ? sug.map((a, i) => `<label><input type="checkbox" checked data-i="${i}"> <span class="mono">${a.text}</span> <span class="muted">(${a.zone}, weight ${a.weight})</span></label>`).join('<br>') : '<span class="muted">No readable header/footer text; the template will rely on layout.</span>';
+    m.dataset.page = pageIndex; m._sug = sug;
+  }
+
+  /* ---------- templates panel ---------- */
+  const tplPanel = {
+    render() {
+      const el = $('tplList'); if (!el) return;
+      el.innerHTML = lib.templates.map((t) => `<div class="tpl"><div><b>${t.displayName}</b> <span class="mono muted">${t.id}</span> · family ${t.family} · folder ${t.routing.folder} · ${t.exemplars.length} exemplar(s)
+        ${t.enabled === false ? '<span class="bad">disabled</span>' : ''}</div>
+        <div class="muted">anchors: ${t.anchors.map((a) => `${a.text} [${a.zone} ${a.weight}]`).join('; ') || '–'}<br>negatives: ${t.negatives.map((a) => `${a.text} [${a.weight}]`).join('; ') || '–'}</div>
+        <div class="row"><button class="btn small secondary" data-act="edit" data-tpl="${t.id}">Edit JSON</button><button class="btn small secondary" data-act="toggle" data-tpl="${t.id}">${t.enabled === false ? 'Enable' : 'Disable'}</button><button class="btn small secondary" data-act="delete" data-tpl="${t.id}">Delete</button></div></div>`).join('');
+      $('dealTypes').value = JSON.stringify(lib.dealTypes, null, 2);
+      $('folders').value = JSON.stringify(lib.settings.folders, null, 2);
+      $('libVersion').textContent = lib.versionHash();
+    },
+  };
+
+  /* ---------- RCA panel ---------- */
+  const rcaPanel = {
+    async render() {
+      const el = $('rcaBody'); if (!el) return;
+      const [evalr, fc, hist] = await Promise.all([RCA.evaluate(lib, lib.settings.thresholds), RCA.failureCounts(), Store.getAll('exemplarHistory').catch(() => [])]);
+      el.innerHTML = `<div class="stats">
+        <div class="stat"><div class="k">Confirmed pages</div><div class="v">${evalr.n}</div></div>
+        <div class="stat"><div class="k">Precision (confident)</div><div class="v">${(evalr.precision * 100).toFixed(1)}%</div></div>
+        <div class="stat"><div class="k">Recall</div><div class="v">${(evalr.recall * 100).toFixed(1)}%</div></div>
+        <div class="stat"><div class="k">Unknown on replay</div><div class="v">${evalr.unknown}</div></div>
+        <div class="stat"><div class="k">Confident-wrong</div><div class="v ${evalr.confidentWrong ? 'bad' : 'ok'}">${evalr.confidentWrong}</div></div>
+        <div class="stat"><div class="k">Corrections</div><div class="v">${fc.total}</div><div class="k">${fc.wrong} were fixes</div></div>
+      </div>
+      <h3>Failures by category</h3><table><tr>${RCA.CATEGORIES.map((c) => `<th>${c}</th>`).join('')}</tr><tr>${RCA.CATEGORIES.map((c) => `<td>${fc.counts[c] || 0}</td>`).join('')}</tr></table>
+      <h3>Per template (replay of confirmed pages)</h3><table><tr><th>Template</th><th>n</th><th>confident ✓</th><th>confident ✗</th><th>likely ✓</th><th>unknown</th></tr>
+      ${evalr.perTemplate.map((t) => `<tr><td>${t.label}</td><td>${t.n}</td><td>${t.confidentCorrect}</td><td class="${t.confidentWrong ? 'bad' : ''}">${t.confidentWrong}</td><td>${t.likelyCorrect}</td><td>${t.unknown}</td></tr>`).join('')}</table>
+      <h3>Recent learning</h3>${hist.slice(-10).reverse().map((h) => `<div class="muted">${h.at.slice(0, 19)} · ${h.templateId} gained exemplar ${h.added || '(none: ' + (h.reason || '') + ')'}${h.dropped ? ', dropped ' + h.dropped : ''} · from page ${(h.pageIndex ?? 0) + 1} <button class="btn small secondary" data-act="undo" data-id="${Object.keys(h).includes('id') ? h.id : ''}" data-key="${h.key || ''}">undo</button></div>`).join('') || '<p class="muted">Nothing learned yet.</p>'}`;
+      // attach keys for undo
+      const keys = await Store.getAllKeys('exemplarHistory').catch(() => []);
+      const btns = el.querySelectorAll('[data-act="undo"]');
+      const last = keys.slice(-10).reverse();
+      btns.forEach((b, i) => { b.dataset.key = last[i] || ''; });
+    },
+  };
+
+  function renderNetwork() {
+    const el = $('netList'); if (!el) return;
+    const after = net.entries.filter((e) => e.afterLoad);
+    $('netSummary').textContent = `${net.entries.length} requests during load; ${after.length} after load` + (after.length ? ' (expected: tesseract worker, core and language data on first OCR only)' : '');
+    el.innerHTML = net.entries.slice(-60).map((e) => `<div class="mono small ${e.afterLoad ? 'warn' : 'muted'}">${e.at} ms · ${e.url}</div>`).join('');
+  }
+
+  /* ---------- wiring ---------- */
+  function wire() {
+    document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
+      document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('on', s.id === 'tab-' + b.dataset.tab));
+      if (b.dataset.tab === 'templates') tplPanel.render();
+      if (b.dataset.tab === 'rca') rcaPanel.render();
+    }));
+    const drop = $('drop');
+    const pick = async (file) => { if (!file) return; ui.status('Loading PDF…'); await loadPdf(new Uint8Array(await file.arrayBuffer()), file.name); ui.status(''); };
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files[0]); });
+    $('fileInput').addEventListener('change', (e) => pick(e.target.files[0]));
+    $('btnRun').addEventListener('click', async () => {
+      $('btnRun').disabled = true;
+      try { await run({ onProgress: (p) => ui.status(`Page ${p.done}/${p.total} · ${p.state} via ${p.rung}`) }); ui.status(`Done in ${(state.stats.ms / 1000).toFixed(1)} s.`); }
+      catch (e) { ui.status('Error: ' + e.message); console.error(e); }
+      $('btnRun').disabled = false;
+    });
+    $('btnCancel').addEventListener('click', () => { state.cancel = true; });
+    $('btnFolder').addEventListener('click', async () => {
+      if (!window.showDirectoryPicker) { ui.status('This browser cannot write folders directly; a ZIP will be downloaded instead.'); return; }
+      try { state.dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); $('folderName').textContent = state.dirHandle.name; } catch { /* cancelled */ }
+    });
+    $('btnWrite').addEventListener('click', () => write().catch((e) => ui.status('Write failed: ' + e.message)));
+    $('btnManual').addEventListener('click', () => writeManual($('manualRanges').value).then((r) => ui.status(`Wrote ${r.count} manual files (${r.mode}).`)).catch((e) => ui.status(e.message)));
+    document.body.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const act = b.dataset.act, pg = +b.dataset.page;
+      try {
+        if (act === 'choose' || act === 'confirm') { await confirm(pg, b.dataset.tpl, act === 'confirm' ? 'confirm' : 'correct'); ui.status(`Page ${pg + 1} → ${b.dataset.tpl}. Library learned an exemplar.`); rcaPanel.render(); if (!$('inspector').hidden) inspector.open(pg); }
+        else if (act === 'new') newTypeDialog(pg);
+        else if (act === 'inspect') inspector.open(pg);
+        else if (act === 'edit') { $('tplJson').value = JSON.stringify(lib.byId(b.dataset.tpl), null, 2); }
+        else if (act === 'toggle') { const t = lib.byId(b.dataset.tpl); t.enabled = t.enabled === false; await lib.save(); tplPanel.render(); }
+        else if (act === 'delete') { if (confirm(`Delete template ${b.dataset.tpl}?`)) { lib.removeTemplate(b.dataset.tpl); await lib.save(); tplPanel.render(); } }
+        else if (act === 'undo') { if (b.dataset.key) { await RCA.undoLearning(b.dataset.key); rcaPanel.render(); tplPanel.render(); } }
+      } catch (err) { ui.status('Error: ' + err.message); console.error(err); }
+    });
+    document.body.addEventListener('change', async (e) => {
+      const s = e.target.closest('select.tplsel'); if (!s || !s.value) return;
+      const pg = +s.dataset.page; const tpl = s.value; s.value = '';
+      await confirm(pg, tpl, 'correct'); ui.status(`Page ${pg + 1} → ${tpl}.`); rcaPanel.render();
+    });
+    $('insClose').addEventListener('click', () => { $('inspector').hidden = true; });
+    $('ntCancel').addEventListener('click', () => { $('newtype').hidden = true; });
+    $('ntCreate').addEventListener('click', async () => {
+      const m = $('newtype'); const pg = +m.dataset.page;
+      const name = $('ntName').value.trim(); const id = ($('ntId').value.trim() || name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 30));
+      if (!name || !id) { $('ntMsg').textContent = 'Name is required.'; return; }
+      const anchors = [...$('ntAnchors').querySelectorAll('input:checked')].map((c) => m._sug[+c.dataset.i]);
+      const requiredFor = [...$('ntDeal').querySelectorAll('input:checked')].map((c) => c.value);
+      try { await createTemplateFromPage(pg, { id, displayName: name, family: id, folder: $('ntFolder').value.trim() || '99_Other', requiredFor, anchors }); m.hidden = true; ui.status(`Created ${name}. Add one more example and its siblings can become CONFIDENT.`); tplPanel.render(); }
+      catch (err) { $('ntMsg').textContent = err.message; }
+    });
+    $('btnTplSave').addEventListener('click', async () => {
+      try {
+        const t = JSON.parse($('tplJson').value);
+        const g = await RCA.guardChange(async () => { lib.upsertTemplate(t); });
+        if (!g.ok && !confirm(`This change would break ${g.flipped.length} confirmed page(s) (${g.flipped.slice(0, 5).map((f) => 'p.' + (f.pageIndex + 1) + ' ' + f.label + '→' + (f.got || f.now)).join(', ')}${g.flipped.length > 5 ? '…' : ''}); precision ${(g.before.precision * 100).toFixed(1)}% → ${(g.after.precision * 100).toFixed(1)}%. Save anyway?`)) { g.revert(); ui.status('Change reverted.'); return; }
+        await lib.save(); tplPanel.render(); ui.status('Template saved.');
+      } catch (err) { ui.status('Invalid template: ' + err.message); }
+    });
+    $('btnDealSave').addEventListener('click', async () => { try { lib.dealTypes = JSON.parse($('dealTypes').value); lib.settings.folders = JSON.parse($('folders').value); await lib.save(); ui.status('Saved.'); } catch (err) { ui.status('Invalid JSON: ' + err.message); } });
+    $('btnExport').addEventListener('click', () => download('dealsplit-library.json', lib.exportJSON()));
+    $('importInput').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; try { const r = lib.importJSON(await f.text()); await lib.save(); tplPanel.render(); ui.status(`Imported ${r.templates} templates.`); } catch (err) { ui.status('Import failed: ' + err.message); } });
+    $('btnReset').addEventListener('click', async () => { if (confirm('Reset the template library to defaults? Learned exemplars are lost.')) { lib.resetToDefaults(); await lib.save(); tplPanel.render(); } });
+    $('btnExportLog').addEventListener('click', async () => download('dealsplit-log-redacted.json', await RCA.exportRedactedLog()));
+    $('btnThSave').addEventListener('click', async () => {
+      const th = { accept: +$('thAccept').value, margin: +$('thMargin').value, likely: +$('thLikely').value, textQualityMin: +$('thText').value, ocrConfMin: +$('thOcr').value, layoutMinExemplars: +$('thEx').value };
+      const g = await RCA.guardChange(async () => { lib.settings.thresholds = { ...lib.settings.thresholds, ...th }; });
+      if (!g.ok && !confirm(`These thresholds would break ${g.flipped.length} confirmed page(s); precision ${(g.before.precision * 100).toFixed(1)}% → ${(g.after.precision * 100).toFixed(1)}%. Save anyway?`)) { g.revert(); return; }
+      lib.settings.ocrWorkers = +$('setWorkers').value || 1;
+      await lib.save(); ui.status('Settings saved.');
+    });
+    $('btnClearData').addEventListener('click', async () => { if (confirm('Delete all stored decisions, corrections and OCR cache? (Templates are kept.)')) { for (const s of ['ocr', 'decisions', 'corrections', 'exemplarHistory', 'confirmed']) await Store.clear(s); rcaPanel.render(); } });
+    lib.onChange(() => { $('thAccept').value = lib.settings.thresholds.accept; $('thMargin').value = lib.settings.thresholds.margin; $('thLikely').value = lib.settings.thresholds.likely; $('thText').value = lib.settings.thresholds.textQualityMin; $('thOcr').value = lib.settings.thresholds.ocrConfMin; $('thEx').value = lib.settings.thresholds.layoutMinExemplars; $('setWorkers').value = lib.settings.ocrWorkers; });
+  }
+  function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.click(); }
+
+  async function boot() {
+    watchNetwork();
+    wire();
+    try { await loadLibs(ui.status); }
+    catch (e) { ui.status('Could not load libraries: ' + e.message + '. Check the network or the self-hosting settings.'); return; }
+    await lib.load();
+    tplPanel.render();
+    net.loadedAt = performance.now();
+    $('btnRun').disabled = !state.pdf;
+    ui.status('Ready. Drop a PDF.');
+    window.dispatchEvent(new Event('dealsplit-ready'));
+  }
+
+  /* Public API (also used by the automated tests). */
+  window.DealSplit = { state, lib, loadPdf, run, assemble, confirm, createTemplateFromPage, suggestAnchors, write, writeManual, parseRanges, net, LIBS, ready: new Promise((r) => window.addEventListener('dealsplit-ready', r, { once: true })) };
+  return { boot, ui };
+})();
+
+</script>
+<script>DS.App.boot();</script>
+</body>
+</html>
