@@ -113,6 +113,9 @@ DS.Policy = (() => {
         else if (fam === 'UNKNOWN') start = true;              // never merge unknown pages
         else if (vin && cur.vin && vin !== cur.vin) start = true;
         else if (!cont && (cur.expectedMax || 1) === 1) start = true;
+        // No page marker: only merge when the VINs agree or both are unreadable.
+        // One readable VIN and one unreadable is the classic cross-deal merge.
+        else if (!cont && (!!vin !== !!cur.vin)) start = true;
       }
       if (start) {
         cur = { id: docs.length + 1, family: fam, templateId: d.templateId, pages: [], lastCont: null, vin: null,

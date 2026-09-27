@@ -88,7 +88,7 @@ DS.Knowledge = (() => {
 
   function defaultSettings() {
     return {
-      thresholds: { accept: 6.0, margin: 2.5, likely: 3.5, textQualityMin: 0.45, ocrConfMin: 0.55, layoutMinExemplars: 2 },
+      thresholds: { accept: 6.0, margin: 2.5, likely: 3.5, imageOnlyAccept: 9.0, imageOnlyMargin: 3.0, textQualityMin: 0.45, ocrConfMin: 0.55, layoutMinExemplars: 2 },
       folders: { reviewFolder: '_Review', duplicatesFolder: '_Duplicates', dealFolder: '<VIN>_<LastName>_<DealType>' },
       ocrWorkers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)),
       maxExemplars: 20,

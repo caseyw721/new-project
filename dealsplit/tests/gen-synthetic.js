@@ -97,7 +97,10 @@ window.Synth = (() => {
     const y0 = g.bodyTop;
     const vinTxt = opts.vinText || deal.vin;
     page.drawText(`BUYER: ${deal.last}, ${deal.first}     DATE: 03/1${pageNo}/2026`, { x: 36, y: y0, size: 9, font: reg });
-    page.drawText(`VIN: ${vinTxt}   YEAR/MAKE/MODEL: 2025 ${deal.make}   STOCK: S${deal.stock}`, { x: 36, y: y0 - 14, size: 9, font: reg });
+    // VINs are printed prominently on real forms (contract/buyer's order VIN box).
+    page.drawText('VIN:', { x: 36, y: y0 - 16, size: 9, font: reg });
+    page.drawText(vinTxt, { x: 62, y: y0 - 16, size: 11, font: fonts.monoBold || mono });
+    page.drawText(`YEAR/MAKE/MODEL: 2025 ${deal.make}   STOCK: S${deal.stock}`, { x: 250, y: y0 - 14, size: 9, font: reg });
     // body paragraphs (rev-specific wording/order)
     let y = y0 - 40;
     const paras = form.body[rev];
@@ -187,7 +190,7 @@ window.Synth = (() => {
   async function build(spec) {
     const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
     const out = await PDFDocument.create();
-    const fonts = { bold: await out.embedFont(StandardFonts.HelveticaBold), reg: await out.embedFont(StandardFonts.Helvetica), mono: await out.embedFont(StandardFonts.Courier) };
+    const fonts = { bold: await out.embedFont(StandardFonts.HelveticaBold), reg: await out.embedFont(StandardFonts.Helvetica), mono: await out.embedFont(StandardFonts.Courier), monoBold: await out.embedFont(StandardFonts.CourierBold) };
     const truth = [];
     const deals = spec.deals.map((d, i) => ({ ...d, vin: d.vin || makeVin(), last: d.last || NAMES[i % NAMES.length][0], first: d.first || NAMES[i % NAMES.length][1], make: pick(['TOYOTA CAMRY', 'FORD F-150', 'HONDA CIVIC', 'CHEVY SILVERADO']), stock: 1000 + i }));
     const pageSpecs = [];
@@ -214,7 +217,7 @@ window.Synth = (() => {
       } else {
         // draw into a scratch doc, render, degrade, embed as image
         const scratch = await PDFDocument.create();
-        const sf = { bold: await scratch.embedFont(StandardFonts.HelveticaBold), reg: await scratch.embedFont(StandardFonts.Helvetica), mono: await scratch.embedFont(StandardFonts.Courier) };
+        const sf = { bold: await scratch.embedFont(StandardFonts.HelveticaBold), reg: await scratch.embedFont(StandardFonts.Helvetica), mono: await scratch.embedFont(StandardFonts.Courier), monoBold: await scratch.embedFont(StandardFonts.CourierBold) };
         await drawPage(scratch, sf, ps.form, ps.rev, ps.deal, ps.pageNo, { vinText });
         const bytes = await scratch.save();
         let canvas;

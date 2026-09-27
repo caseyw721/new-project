@@ -73,7 +73,8 @@ DS.Reasoner = (() => {
         const n = a.text.split(' ').length;
         const ws = v.zoneWords[a.zone].slice(Math.max(0, at), at + n);
         const wc = ws.length ? ws.reduce((x, y) => x + y[1], 0) / ws.length : 0;
-        const rel = v.source === 'textLayer' ? v.reliability : (wc >= thresholds.ocrConfMin ? clamp(wc, 0, 1) : wc * 0.3);
+        // OCR reliability rises smoothly from 0 at conf 0.3 to 1 at conf 0.7.
+        const rel = v.source === 'textLayer' ? v.reliability : clamp((wc - 0.3) / 0.4, 0, 1);
         if (!best || sim * rel > best.sim * best.reliability) best = { sim, reliability: rel, source: v.source, conf: wc };
       }
       if (best) {
@@ -217,12 +218,17 @@ DS.Reasoner = (() => {
       return { state: top.total >= thresholds.likely ? 'LIKELY' : 'UNKNOWN', margin, families: famEff, notes, blocked: 'untrusted-text' };
     }
     let state = 'UNKNOWN';
+    const imageOnly = groups.length === 1 && groups[0] === 'image';
     if (top.total >= thresholds.accept && margin >= thresholds.margin && groups.length >= 2) state = 'CONFIDENT';
+    // Image evidence alone cannot tell an unseen form from a look-alike near
+    // the threshold, so it needs a clearly higher bar and both image
+    // families (whole-page layout and header/footer zones) agreeing.
+    else if (imageOnly && famEff.includes('layout') && famEff.includes('region') && top.total >= thresholds.imageOnlyAccept && margin >= thresholds.imageOnlyMargin) { state = 'CONFIDENT'; notes.push('image-only confidence (high bar)'); }
     else if (top.total >= thresholds.likely) state = 'LIKELY';
     if (state !== 'CONFIDENT') {
       if (top.total < thresholds.accept) notes.push(`score ${top.total} < accept ${thresholds.accept}`);
       if (margin < thresholds.margin) notes.push(`margin ${round(margin, 2)} < ${thresholds.margin}`);
-      if (groups.length < 2) notes.push(`only ${groups.length} independent evidence group (${groups.join(',') || 'none'}; families ${famEff.join('+') || 'none'})`);
+      if (groups.length < 2) notes.push(imageOnly ? `image evidence only (${famEff.join('+')}): needs score ≥ ${thresholds.imageOnlyAccept} and margin ≥ ${thresholds.imageOnlyMargin}, or readable anchors` : `only ${groups.length} independent evidence group (${groups.join(',') || 'none'}; families ${famEff.join('+') || 'none'})`);
       if (top.layoutCapped) notes.push(top.detail.layout.detail);
     }
     return { state, margin: round(margin, 2), families: famEff, notes };

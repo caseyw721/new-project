@@ -105,6 +105,21 @@ DS.App = (() => {
         features.ocrFull = await P.ocrPool.recognize(r.canvas, null, features.pageHash);
         features.quality.ocrConf = features.ocrFull.meanConf;
         setTextHash();
+      } else if (need === 'vinZoom') {
+        // 300 dpi on demand: OCR a small box to the right of a "VIN" label.
+        const words = [...(features.ocrFull?.words || []), ...(features.ocrHeader?.words || [])];
+        const label = words.find((w) => /^V[1I]N[:.]?$/i.test(w.text));
+        if (label && !features.ocrVin) {
+          const raw = await P.renderPage(page, 300);
+          const prep = P.prepareForOcr(raw.canvas, features.quality.skewDeg || 0);
+          const W = raw.width, H = raw.height;
+          const rect = { left: Math.max(0, Math.round((label.x + label.w) * W) - 4), top: Math.max(0, Math.round((label.y - label.h * 0.6) * H)),
+                         width: Math.min(W, Math.round(W * 0.42)), height: Math.max(20, Math.round(label.h * 2.4 * H)) };
+          if (rect.left + rect.width > W) rect.width = W - rect.left;
+          if (rect.top + rect.height > H) rect.height = H - rect.top;
+          features.ocrVin = await P.ocrPool.recognize(prep.canvas, rect, features.pageHash);
+          features.ocrVin.zoom = true;
+        }
       }
       return features;
     };
@@ -155,7 +170,29 @@ DS.App = (() => {
     if (state.cancel) { state.running = false; return null; }
     // Second pass: context.
     const decisions = R.contextPass(results.map((r) => r.decision), results.map((r) => r.features), lib, th);
-    for (let i = 0; i < n; i++) { results[i].decision = decisions[i]; results[i].vins = Pol.extractVins(results[i].features, i); results[i].expectedMax = decisions[i].templateId ? lib.byId(decisions[i].templateId)?.expectedPages.max : 1; }
+    for (let i = 0; i < n; i++) {
+      results[i].decision = decisions[i];
+      results[i].vins = Pol.extractVins(results[i].features, i);
+      results[i].expectedMax = decisions[i].templateId ? lib.byId(decisions[i].templateId)?.expectedPages.max : 1;
+    }
+    // VIN zoom pass (300 dpi crops) for scanned pages whose VIN did not read.
+    const zoomJobs = [];
+    for (let i = 0; i < n; i++) {
+      const r = results[i];
+      if (r.vins.some((v) => v.valid) || !r.features.ocrFull) continue;
+      zoomJobs.push(i);
+    }
+    const zoomWorker = async (start) => {
+      for (let k = start; k < zoomJobs.length; k += conc) {
+        const i = zoomJobs[k];
+        const perceive = await perceiveFactory(i);
+        Object.assign(perceive.features = results[i].features, {});
+        try { await perceive('vinZoom'); } catch (e) { console.warn('vin zoom', e); }
+        results[i].vins = Pol.extractVins(results[i].features, i);
+        onProgress?.({ done: n, total: n, page: i + 1, rung: 'VIN-ZOOM', state: results[i].decision.state });
+      }
+    };
+    await Promise.all(Array.from({ length: conc }, (_, k) => zoomWorker(k)));
     state.pages = results;
     await assemble();
     state.stats = { ms: round(now() - t0, 0), perPage: round((now() - t0) / n, 0), ocr: { ...P.ocrPool.stats },
@@ -534,14 +571,14 @@ DS.App = (() => {
     $('btnReset').addEventListener('click', async () => { if (confirm('Reset the template library to defaults? Learned exemplars are lost.')) { lib.resetToDefaults(); await lib.save(); tplPanel.render(); } });
     $('btnExportLog').addEventListener('click', async () => download('dealsplit-log-redacted.json', await RCA.exportRedactedLog()));
     $('btnThSave').addEventListener('click', async () => {
-      const th = { accept: +$('thAccept').value, margin: +$('thMargin').value, likely: +$('thLikely').value, textQualityMin: +$('thText').value, ocrConfMin: +$('thOcr').value, layoutMinExemplars: +$('thEx').value };
+      const th = { accept: +$('thAccept').value, margin: +$('thMargin').value, likely: +$('thLikely').value, imageOnlyAccept: +$('thImgAccept').value, imageOnlyMargin: +$('thImgMargin').value, textQualityMin: +$('thText').value, ocrConfMin: +$('thOcr').value, layoutMinExemplars: +$('thEx').value };
       const g = await RCA.guardChange(async () => { lib.settings.thresholds = { ...lib.settings.thresholds, ...th }; });
       if (!g.ok && !confirm(`These thresholds would break ${g.flipped.length} confirmed page(s); precision ${(g.before.precision * 100).toFixed(1)}% → ${(g.after.precision * 100).toFixed(1)}%. Save anyway?`)) { g.revert(); return; }
       lib.settings.ocrWorkers = +$('setWorkers').value || 1;
       await lib.save(); ui.status('Settings saved.');
     });
     $('btnClearData').addEventListener('click', async () => { if (confirm('Delete all stored decisions, corrections and OCR cache? (Templates are kept.)')) { for (const s of ['ocr', 'decisions', 'corrections', 'exemplarHistory', 'confirmed']) await Store.clear(s); rcaPanel.render(); } });
-    lib.onChange(() => { $('thAccept').value = lib.settings.thresholds.accept; $('thMargin').value = lib.settings.thresholds.margin; $('thLikely').value = lib.settings.thresholds.likely; $('thText').value = lib.settings.thresholds.textQualityMin; $('thOcr').value = lib.settings.thresholds.ocrConfMin; $('thEx').value = lib.settings.thresholds.layoutMinExemplars; $('setWorkers').value = lib.settings.ocrWorkers; });
+    lib.onChange(() => { $('thAccept').value = lib.settings.thresholds.accept; $('thMargin').value = lib.settings.thresholds.margin; $('thLikely').value = lib.settings.thresholds.likely; $('thImgAccept').value = lib.settings.thresholds.imageOnlyAccept; $('thImgMargin').value = lib.settings.thresholds.imageOnlyMargin; $('thText').value = lib.settings.thresholds.textQualityMin; $('thOcr').value = lib.settings.thresholds.ocrConfMin; $('thEx').value = lib.settings.thresholds.layoutMinExemplars; $('setWorkers').value = lib.settings.ocrWorkers; });
   }
   function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.click(); }
 
