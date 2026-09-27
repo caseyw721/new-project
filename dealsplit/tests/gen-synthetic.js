@@ -221,7 +221,7 @@ window.Synth = (() => {
         await drawPage(scratch, sf, ps.form, ps.rev, ps.deal, ps.pageNo, { vinText });
         const bytes = await scratch.save();
         let canvas;
-        if (variant === 'noisy') { canvas = noisySkew(await renderBytes(bytes, 150), 3, 0.2); }
+        if (variant === 'noisy') { canvas = noisySkew(await renderBytes(bytes, 200), 3, 0.2); }   // a real 200-dpi scan, skewed, 20% noise
         else if (variant === 'fax') { canvas = faxify(await renderBytes(bytes, 100)); }
         else { canvas = await renderBytes(bytes, 150); } // trap: clean image
         const jpg = await canvasBytes(canvas, variant === 'fax' ? 'image/png' : 'image/jpeg', 0.7);
