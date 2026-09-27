@@ -188,7 +188,8 @@ DS.App = (() => {
     const zoomJobs = [];
     for (let i = 0; i < n; i++) {
       const r = results[i];
-      if (r.vins.some((v) => v.valid) || !r.features.ocrFull) continue;
+      // Any OCR'd page (strips are usually enough to place the VIN label) without a valid VIN.
+      if (r.vins.some((v) => v.valid) || !(r.features.ocrFull || r.features.ocrHeader)) continue;
       zoomJobs.push(i);
     }
     const zoomWorker = async (start) => {
@@ -269,12 +270,18 @@ DS.App = (() => {
         if (z === 'body') continue;
         const t = DS.Infra.normText(w.text);
         if (!t) continue;
-        for (const tok of t.split(' ')) zones[z].push({ tok, ok: w.conf >= 0.75 && (plaus(w.text) >= 1 || /^(OF|OR|AND|FOR|TO|IN|BY)$/.test(tok)) });
+        for (const tok of t.split(' ')) zones[z].push({ tok, ok: w.conf >= 0.75 && (plaus(w.text) >= 1 || /^(OF|OR|AND|FOR|TO|IN|BY)$/.test(tok)), x: w.x, y: w.y, w: w.w, h: w.h });
       }
-      // header: runs
+      // header: runs of good words on one line; a line break or a wide gap
+      // (the dealership logo box next to the title) starts a new run
       const runs = [];
-      let run = [];
-      for (const { tok, ok } of zones.header) { if (ok) run.push(tok); else { if (run.length) runs.push(run); run = []; } }
+      let run = [], prev = null;
+      const sameLine = (a, b) => a && Math.abs(a.y - b.y) <= 0.7 * Math.max(a.h, b.h, 0.004) && b.x - (a.x + a.w) <= 2.5 * Math.max(a.h, b.h, 0.004) && b.x >= a.x - 0.02;
+      for (const wd of zones.header) {
+        if (wd.ok && (run.length === 0 || sameLine(prev, wd))) run.push(wd.tok);
+        else { if (run.length) runs.push(run); run = wd.ok ? [wd.tok] : []; }
+        prev = wd;
+      }
       if (run.length) runs.push(run);
       const wordRuns = runs.filter((r) => r.length >= 2 && !r.some((t) => /\d/.test(t)) && r.filter((t) => t.length >= 3).length >= 2)
         .map((r) => r.slice(0, 6)).sort((a, b) => b.join(' ').length - a.join(' ').length);
