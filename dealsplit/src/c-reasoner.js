@@ -40,32 +40,48 @@ DS.Reasoner = (() => {
     }
     const box = features.fingerprint?.contentBox;
     for (const v of views) {
+      // Per zone: normalized words and their confidences (1 for a text layer),
+      // so an anchor can be weighted by the words it actually matched rather
+      // than by the page's mean confidence (garbage body text must not hide a
+      // clearly read title).
       const z = { header: [], footer: [], body: [], any: [] };
-      for (const w of v.words) { z[zoneOf(w, box)].push(w.text); z.any.push(w.text); }
-      v.zoneText = {};
-      for (const k of Object.keys(z)) v.zoneText[k] = DS.Infra.normText(z[k].join(' '));
+      for (const w of v.words) {
+        const t = DS.Infra.normText(w.text);
+        if (!t) continue;
+        const c = w.conf === undefined ? 1 : w.conf;
+        for (const tok of t.split(' ')) { const zn = zoneOf(w, box); z[zn].push([tok, c]); z.any.push([tok, c]); }
+      }
+      v.zoneWords = {}; v.zoneText = {};
+      for (const k of Object.keys(z)) { v.zoneWords[k] = z[k]; v.zoneText[k] = z[k].map((x) => x[0]).join(' '); }
     }
     return views;
   }
 
   /* ---------- evidence families ---------- */
-  function anchorEvidence(tpl, views) {
+  function anchorEvidence(tpl, views, thresholds) {
     const hits = [];
-    let total = 0;
+    let total = 0, trustedOcrHit = false;
     const eval1 = (a, sign) => {
       let best = null;
       for (const v of views) {
-        if (!v.reliability) continue;
+        if (!v.reliability && v.source === 'textLayer') continue;   // untrusted text layer: ignore entirely
         const hay = v.zoneText[a.zone] || '';
         if (!hay) continue;
-        const { sim } = fuzzyFind(a.text, hay);
-        if (sim >= a.fuzzy && (!best || sim * v.reliability > best.sim * best.reliability)) best = { sim, reliability: v.reliability, source: v.source };
+        const { sim, at } = fuzzyFind(a.text, hay);
+        if (sim < a.fuzzy) continue;
+        // confidence of the matched window
+        const n = a.text.split(' ').length;
+        const ws = v.zoneWords[a.zone].slice(Math.max(0, at), at + n);
+        const wc = ws.length ? ws.reduce((x, y) => x + y[1], 0) / ws.length : 0;
+        const rel = v.source === 'textLayer' ? v.reliability : (wc >= thresholds.ocrConfMin ? clamp(wc, 0, 1) : wc * 0.3);
+        if (!best || sim * rel > best.sim * best.reliability) best = { sim, reliability: rel, source: v.source, conf: wc };
       }
       if (best) {
         const strength = (best.sim - a.fuzzy) / (1 - a.fuzzy);        // 0..1 above the template's threshold
         const c = sign * Math.abs(a.weight) * (0.5 + 0.5 * strength) * best.reliability;
-        hits.push({ text: a.text, zone: a.zone, sim: round(best.sim), source: best.source, contribution: round(c, 2) });
+        hits.push({ text: a.text, zone: a.zone, sim: round(best.sim), conf: round(best.conf), source: best.source, contribution: round(c, 2) });
         total += c;
+        if (best.source !== 'textLayer' && best.conf >= thresholds.ocrConfMin) trustedOcrHit = true;
       }
     };
     for (const a of tpl.anchors) eval1(a, +1);
@@ -73,7 +89,7 @@ DS.Reasoner = (() => {
     const posHits = hits.length;
     total = 0;
     for (const a of tpl.negatives) eval1(a, -1);
-    return { anchor: { score: round(pos, 2), hits: hits.slice(0, posHits) }, negative: { score: round(total, 2), hits: hits.slice(posHits) } };
+    return { anchor: { score: round(pos, 2), hits: hits.slice(0, posHits), trustedOcrHit }, negative: { score: round(total, 2), hits: hits.slice(posHits) } };
   }
 
   function layoutEvidence(tpl, fp, minExemplars) {
@@ -139,7 +155,7 @@ DS.Reasoner = (() => {
     const rows = [];
     for (const tpl of library.templates) {
       if (tpl.enabled === false) continue;
-      const { anchor, negative } = anchorEvidence(tpl, views);
+      const { anchor, negative } = anchorEvidence(tpl, views, thresholds);
       const layout = layoutEvidence(tpl, fp, thresholds.layoutMinExemplars);
       const region = regionEvidence(tpl, fp);
       const structure = structureEvidence(tpl, fp);
@@ -151,7 +167,9 @@ DS.Reasoner = (() => {
     }
     rows.sort((a, b) => b.total - a.total);
     const textTrusted = views.some((v) => v.trusted && v.source === 'textLayer');
-    const ocrTrusted = views.some((v) => v.trusted && v.source !== 'textLayer');
+    // OCR counts as trusted when the page reads well overall, or when the top
+    // candidate's anchors were matched by confidently read words.
+    const ocrTrusted = views.some((v) => v.trusted && v.source !== 'textLayer') || !!rows[0]?.detail?.anchor?.some((h) => h.source !== 'textLayer' && h.conf >= thresholds.ocrConfMin);
     return { rows, textTrusted, ocrTrusted, views: views.map((v) => ({ source: v.source, reliability: round(v.reliability), trusted: v.trusted })) };
   }
 

@@ -54,15 +54,16 @@ DS.Policy = (() => {
     const sources = [['textLayer', features.textLayer], ['ocrFull', features.ocrFull], ['ocrHeader', features.ocrHeader], ['ocrFooter', features.ocrFooter]];
     for (const [src, s] of sources) {
       if (!s) continue;
-      const conf = src === 'textLayer' ? s.quality.score : s.meanConf;
-      const text = s.words.map((w) => w.text).join(' ').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ');
-      const joined = text.replace(/\s+/g, ' ');
+      const pageConf = src === 'textLayer' ? s.quality.score : s.meanConf;
       const seen = new Set();
-      for (const m of joined.matchAll(VIN_LOOSE_RE)) {
-        if (seen.has(m[0])) continue;
-        seen.add(m[0]);
-        const r = repairVin(m[0]);
-        out.push({ raw: m[0], vin: r.vin, valid: !!r.vin, repaired: r.repaired, steps: r.steps, source: src, confidence: round(conf), pageIndex });
+      // Confidence of a candidate is the confidence of the word(s) it came from.
+      for (const w of s.words) {
+        const tok = w.text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (tok.length !== 17 || seen.has(tok)) continue;
+        seen.add(tok);
+        const r = repairVin(tok);
+        const conf = src === 'textLayer' ? pageConf : (w.conf ?? pageConf);
+        out.push({ raw: tok, vin: r.vin, valid: !!r.vin, repaired: r.repaired, steps: r.steps, source: src, confidence: round(conf), pageIndex });
       }
       // Also try tokens split by OCR noise: 17 chars across two adjacent words
       const words = s.words.map((w) => w.text.toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -70,6 +71,7 @@ DS.Policy = (() => {
         const j = words[i] + words[i + 1];
         if (j.length === 17 && !seen.has(j)) {
           const r = repairVin(j);
+          const conf = src === 'textLayer' ? pageConf : Math.min(s.words[i].conf ?? pageConf, s.words[i + 1].conf ?? pageConf);
           if (r.vin) { seen.add(j); out.push({ raw: j, vin: r.vin, valid: true, repaired: r.repaired, steps: [...r.steps, 'joined'], source: src, confidence: round(conf * 0.8), pageIndex }); }
         }
       }
@@ -176,9 +178,23 @@ DS.Policy = (() => {
     const merged = new Map();
     for (let i = 0; i < vins.length; i++) {
       if (merged.has(vins[i])) continue;
-      for (let j = i + 1; j < vins.length; j++) if (!merged.has(vins[j]) && ham(vins[i], vins[j]) <= 2) merged.set(vins[j], vins[i]);
+      for (let j = i + 1; j < vins.length; j++) {
+        if (merged.has(vins[j])) continue;
+        const d = ham(vins[i], vins[j]);
+        // ≤2 always; ≤4 when the weaker one is a single low-weight (OCR) read.
+        if (d <= 2 || (d <= 4 && strength.get(vins[j]) < 0.6 && strength.get(vins[i]) >= 3 * strength.get(vins[j]))) merged.set(vins[j], vins[i]);
+      }
     }
     for (const doc of docs) if (doc.vin && merged.has(doc.vin)) { doc.vinMergedFrom = doc.vin; doc.vin = merged.get(doc.vin); }
+    // 1c. A VIN seen only once, only by low-confidence OCR, is not enough to open
+    //     a deal: the document goes to review with its candidates kept.
+    const seenBy = new Map();
+    for (const doc of docs) if (doc.vin) seenBy.set(doc.vin, (seenBy.get(doc.vin) || 0) + 1);
+    for (const doc of docs) {
+      if (!doc.vin || seenBy.get(doc.vin) > 1) continue;
+      const strongRead = doc.vinCandidates.some((v) => v.vin === doc.vin && (v.source === 'textLayer' || v.confidence >= 0.6));
+      if (!strongRead) { doc.vinWeak = doc.vin; doc.vin = null; }
+    }
     // 2. Propagate along contiguous runs, conservatively: a doc without a
     //    readable VIN takes its neighbours' VIN only when both neighbours
     //    agree. A mis-grouped deal is worse than a document left for review.

@@ -529,11 +529,15 @@ DS.Perception = (() => {
       const y0 = y > 0 ? y - 1 : y, y1 = y < h - 1 ? y + 1 : y;
       for (let x = 0; x < w; x++) {
         const x0 = x > 0 ? x - 1 : x, x1 = x < w - 1 ? x + 1 : x;
-        let n = 0;
-        for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) win[n++] = data[yy * w + xx];
-        // partial insertion sort to the median
-        for (let i = 1; i < n; i++) { const v = win[i]; let j = i - 1; while (j >= 0 && win[j] > v) { win[j + 1] = win[j]; j--; } win[j + 1] = v; }
-        out[y * w + x] = win[n >> 1];
+        win[0] = data[y0 * w + x0]; win[1] = data[y0 * w + x]; win[2] = data[y0 * w + x1];
+        win[3] = data[y * w + x0]; win[4] = data[y * w + x]; win[5] = data[y * w + x1];
+        win[6] = data[y1 * w + x0]; win[7] = data[y1 * w + x]; win[8] = data[y1 * w + x1];
+        // 19-comparator median-of-9 network (Paeth)
+        let t;
+        const sw = (a, b) => { if (win[a] > win[b]) { t = win[a]; win[a] = win[b]; win[b] = t; } };
+        sw(1, 2); sw(4, 5); sw(7, 8); sw(0, 1); sw(3, 4); sw(6, 7); sw(1, 2); sw(4, 5); sw(7, 8);
+        sw(0, 3); sw(5, 8); sw(4, 7); sw(3, 6); sw(1, 4); sw(2, 5); sw(4, 7); sw(4, 2); sw(6, 4); sw(4, 2);
+        out[y * w + x] = win[4];
       }
     }
     return { w, h, data: out };
