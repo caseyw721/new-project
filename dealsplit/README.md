@@ -75,15 +75,15 @@ After one onboarding batch (every template × 2 revisions × 3 scan qualities, c
 
 | Check | Result |
 |---|---|
-| CONFIDENT-and-correct on known forms | **97.1%** (134/138): clean 43/43, fax 46/46, noisy 41/45, garbage-text-layer traps 4/4 |
+| CONFIDENT-and-correct on known forms | **98.6%** (136/138): clean 43/43, fax 46/46, noisy 43/45, garbage-text-layer traps 4/4 |
 | Confident-wrong | **0** |
-| Unseen form (5 pages) | all abstain → `_Review/` |
+| Unseen form (5 pages) | all abstain → `_Review/`; after the clerk names it from one clean page and confirms one scan, its readable siblings come back as that form (clean ones CONFIDENT) |
 | Garbage embedded text layers (4 pages) | all rejected; classified from layout/OCR |
 | Exact duplicate | detected → `_Duplicates/` |
 | Pages filed under a wrong VIN | **0**; phantom VIN deals **0**; wrong deal types **0** (ambiguous allowed) |
 | Pages with a readable VIN grouped correctly | 43/43 |
-| Pages grouped by VIN overall | ~48/138: 100-dpi faxes and 20%-noise scans rarely yield a readable 17-character VIN, so those documents wait in review with every raw candidate kept in the manifest |
-| Speed | ~0.7 s/page average; text-layer pages ~0.2 s; scanned pages ~1.5–2.5 s (OCR) |
+| Pages grouped by VIN overall | ~49/138: 100-dpi faxes and 20%-noise scans rarely yield a readable 17-character VIN, so those documents wait in review with every raw candidate kept in the manifest |
+| Speed | ~0.6 s/page average (144 pages in 83 s); text-layer pages ~0.2 s; scanned pages ~1–2 s (header/footer strip OCR first, full-page OCR only when the strips do not settle it) |
 | Network after load | none (every non-local request is blocked by the harness) |
 
 The trade the design makes: it never files a page under the wrong deal or the wrong form, at the
