@@ -19,8 +19,9 @@ comma-separated fields.
 | `telemetry,0` / `telemetry,1` | Stop or start the `T` lines. |
 | `help` | List the commands. |
 | `rings` | *Receiver only.* List the rings it can hear. |
-| `ring,<id>` / `ring,auto` | *Receiver only.* Pin one ring, or let the first ring that moves take over. |
+| `ring,<id>` / `ring,auto` | *Receiver only.* Pin one ring, or let the first ring that moves take over. Kept in flash, so it survives unplugging. |
 | `raw,1` / `raw,0` | *Receiver only.* Start or stop an `R` line for every packet from every ring (both rings at once, for recording a pinch). |
+| `tap,1` / `tap,0` | *Receiver only.* Enable (default) or disable the thumb click: a tap of a clicker ring's finger on the pointer ring's finger is a shock on both rings within 50 ms (|accel| changing faster than 1000 LSB/ms on the pointer ring, 300 on the clicker), counted only when the pointer ring turned less than 20° in the 400–150 ms before it (so a hand swing's onset is not a tap); the receiver then moves the cursor back to where it pointed 150 ms before the shock, clicks, and ignores motion for 350 ms while the fingers open; 600 ms between clicks. Each click prints `I,tap,<pointer jerk>,<clicker jerk>,<dt ms>,quiet,<deg>,rewind,<dx>,<dy>`; a shock refused by the quiet rule prints `I,tap,no,...`. |
 | `bootloader` | *Receiver only (Makerdiary MDK dongle).* Restart into the UF2BOOT drive, as holding its button while plugging it in does. |
 | `info` | *Ring only.* Mode, IMU status and radio counters. |
 | `bootloader` | *Ring only.* Restart into the XIAO-SENSE drive for a firmware update, like a double-press of reset. |

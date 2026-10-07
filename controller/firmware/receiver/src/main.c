@@ -10,11 +10,13 @@
  * first ring that moves takes over when the current one is idle or silent;
  * the "ring" command can pin a specific one.
  */
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
@@ -94,6 +96,11 @@ struct ring_slot {
 	int8_t rssi_dbm;
 	bool bias_valid;           /* remembered while another ring is active */
 	float bias[3];
+	float accel_mag;           /* |accel| of the last packet (raw LSB) and when it arrived, for the jerk */
+	uint32_t accel_us;
+	bool accel_valid;
+	uint32_t jerk_ms;          /* when |accel| last changed faster than the clicker threshold */
+	float jerk;                /* how fast (peak within the window, LSB per ms) */
 };
 
 /* Owned by the motion thread; the command thread reads it under ring_lock. */
@@ -102,8 +109,207 @@ static struct ring_slot rings[MAX_RINGS];
 static int active = -1;
 static uint32_t pinned_id; /* 0 = automatic */
 
+/* The pin is kept in flash ("rx/ring"), so a replugged receiver comes back pinned to the pointer ring. */
+static int rx_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg)
+{
+	const char *next;
+	uint32_t id;
+
+	if (!settings_name_steq(name, "ring", &next) || next != NULL) {
+		return -ENOENT;
+	}
+	if (len != sizeof(id) || read_cb(cb_arg, &id, sizeof(id)) != (ssize_t)sizeof(id)) {
+		return 0;
+	}
+	k_spinlock_key_t key = k_spin_lock(&ring_lock);
+
+	pinned_id = id;
+	k_spin_unlock(&ring_lock, key);
+	return 0;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(rx, "rx", NULL, rx_settings_set, NULL, NULL);
+
 static struct pe_state engine;
 static uint32_t engine_cfg_gen;
+
+/* ------------------------------------------------------------------ */
+/* Thumb click                                                         */
+/*
+ * A tap of the thumb tip on the index fingertip is a shock on both rings
+ * within a few milliseconds: |accel| changes by thousands of LSB per
+ * millisecond (recorded 2026-10-07: pointer ring median 6300 LSB/ms, thumb
+ * ring 2500), while ordinary pointing changes it by under 250. Hand swings
+ * can be just as sharp at their onset, so a shock only counts as a tap when
+ * the pointer ring was nearly still in the 400 to 150 ms before it (taps
+ * come after the hand has settled on the target; swing shocks come mid-move,
+ * 100+ degrees into the motion). The pointer finger curls 10-20 degrees in
+ * the 100 ms before contact, so the click is posted after the cursor is
+ * moved back to where it pointed before the pinch began, and motion is
+ * ignored while the fingers open again. The ring that drives the cursor is
+ * the pointer; any other ring is a clicker.
+ */
+#define TAP_JERK_POINTER 1000.0f /* |accel| change on the pointer ring, LSB per ms */
+#define TAP_JERK_CLICKER 300.0f  /* on a clicker ring */
+#define TAP_WINDOW_MS 50         /* the two shocks must both fall within this */
+#define TAP_QUIET_FROM_MS 400    /* the pointer ring's rotation in [now-400, now-150) ms ... */
+#define TAP_QUIET_TO_MS 150
+#define TAP_QUIET_MAX_DEG 20.0f  /* ... must stay under this for a shock to be a tap */
+#define TAP_REWIND_MS 150        /* motion before the pointer ring's shock that is undone */
+#define TAP_HOLD_MS 350          /* motion ignored after the click (fingers opening) */
+#define TAP_REFRACTORY_MS 600    /* the fingers opening again is not a second tap */
+#define HIST_LEN 512             /* ms of motion remembered (power of two) */
+
+static atomic_t tap_on = ATOMIC_INIT(1);
+static int32_t hist_x[HIST_LEN], hist_y[HIST_LEN]; /* cursor motion sent, per millisecond */
+static uint16_t hist_rot[HIST_LEN];                /* pointer ring rotation, centidegrees per millisecond */
+static uint32_t hist_ms;         /* slot hist_ms & (HIST_LEN - 1) holds that millisecond */
+static bool holding;
+static uint32_t hold_until_ms;
+static uint32_t last_click_ms;
+
+struct tap_hit {
+	bool fire;
+	float pointer_jerk, clicker_jerk;
+	int32_t dt_ms;               /* clicker shock minus pointer shock */
+	uint32_t pointer_jerk_ms;
+	float quiet_deg;             /* pointer rotation in the quiet window */
+};
+
+/* Motion thread only. */
+static void hist_advance(uint32_t now)
+{
+	if (now - hist_ms >= HIST_LEN) {
+		memset(hist_x, 0, sizeof(hist_x));
+		memset(hist_y, 0, sizeof(hist_y));
+		memset(hist_rot, 0, sizeof(hist_rot));
+		hist_ms = now;
+		return;
+	}
+	while (hist_ms != now) {
+		hist_ms++;
+		hist_x[hist_ms & (HIST_LEN - 1)] = 0;
+		hist_y[hist_ms & (HIST_LEN - 1)] = 0;
+		hist_rot[hist_ms & (HIST_LEN - 1)] = 0;
+	}
+}
+
+static void record_rotation(const struct pe_output *out, uint32_t now)
+{
+	float deg = sqrtf(out->dangle_deg[0] * out->dangle_deg[0] + out->dangle_deg[1] * out->dangle_deg[1] +
+			  out->dangle_deg[2] * out->dangle_deg[2]);
+	uint32_t k = now & (HIST_LEN - 1);
+	uint32_t v = hist_rot[k] + (uint32_t)(deg * 100.0f + 0.5f);
+
+	hist_advance(now);
+	hist_rot[k] = (uint16_t)MIN(v, UINT16_MAX);
+}
+
+static float rotation_between(uint32_t from_ms_ago, uint32_t to_ms_ago, uint32_t now)
+{
+	uint32_t sum = 0;
+
+	hist_advance(now);
+	for (uint32_t i = to_ms_ago; i < from_ms_ago && i < HIST_LEN; i++) {
+		sum += hist_rot[(now - i) & (HIST_LEN - 1)];
+	}
+	return (float)sum / 100.0f;
+}
+
+static void send_motion(int32_t dx, int32_t dy, uint32_t now)
+{
+	if (holding) {
+		if ((int32_t)(hold_until_ms - now) > 0) {
+			return;      /* fingers opening after a click */
+		}
+		holding = false;
+	}
+	hist_advance(now);
+	hist_x[now & (HIST_LEN - 1)] += dx;
+	hist_y[now & (HIST_LEN - 1)] += dy;
+	usb_io_move(dx, dy);
+}
+
+/* Undo the cursor motion sent in the last `ms` milliseconds; reports what was undone. */
+static void rewind_motion(uint32_t ms, uint32_t now, int32_t *undone_x, int32_t *undone_y)
+{
+	int32_t sx = 0, sy = 0;
+
+	hist_advance(now);
+	ms = MIN(ms, HIST_LEN);
+	for (uint32_t i = 0; i < ms; i++) {
+		uint32_t k = (now - i) & (HIST_LEN - 1);
+
+		sx += hist_x[k];
+		sy += hist_y[k];
+		hist_x[k] = 0;
+		hist_y[k] = 0;
+	}
+	usb_io_move(-sx, -sy);
+	*undone_x = sx;
+	*undone_y = sy;
+}
+
+/* Per packet, under ring_lock: how fast |accel| is changing. */
+static void jerk_update(struct ring_slot *s, const int16_t a[3], uint32_t t_us, uint32_t now)
+{
+	float mag = sqrtf((float)a[0] * a[0] + (float)a[1] * a[1] + (float)a[2] * a[2]);
+
+	if (s->accel_valid) {
+		float dt_ms = MAX((float)(t_us - s->accel_us) / 1000.0f, 0.5f);
+		float jerk = fabsf(mag - s->accel_mag) / dt_ms;
+
+		if (jerk > TAP_JERK_CLICKER) {
+			if (now - s->jerk_ms > TAP_WINDOW_MS) {
+				s->jerk_ms = now;  /* the first sample of a new shock */
+				s->jerk = jerk;
+			} else {
+				s->jerk = MAX(s->jerk, jerk);
+			}
+		}
+	}
+	s->accel_mag = mag;
+	s->accel_us = t_us;
+	s->accel_valid = true;
+}
+
+/* Under ring_lock: a pointer-ring shock and a clicker-ring shock inside one window, after a quiet spell = a tap. */
+static struct tap_hit tap_check(uint32_t now)
+{
+	struct tap_hit hit = {.fire = false};
+
+	if (!atomic_get(&tap_on) || active < 0 || now - last_click_ms < TAP_REFRACTORY_MS) {
+		return hit;
+	}
+	struct ring_slot *a = &rings[active];
+
+	if (a->jerk_ms == 0 || now - a->jerk_ms > TAP_WINDOW_MS || a->jerk < TAP_JERK_POINTER) {
+		return hit;
+	}
+	for (int i = 0; i < MAX_RINGS; i++) {
+		struct ring_slot *o = &rings[i];
+
+		if (i == active || !o->used || o->jerk_ms == 0 || now - o->jerk_ms > TAP_WINDOW_MS) {
+			continue;
+		}
+		hit.pointer_jerk = a->jerk;
+		hit.clicker_jerk = o->jerk;
+		hit.dt_ms = (int32_t)(o->jerk_ms - a->jerk_ms);
+		hit.pointer_jerk_ms = a->jerk_ms;
+		hit.quiet_deg = rotation_between(TAP_QUIET_FROM_MS + (now - a->jerk_ms),
+						 TAP_QUIET_TO_MS + (now - a->jerk_ms), now);
+		hit.fire = hit.quiet_deg < TAP_QUIET_MAX_DEG;
+		a->jerk_ms = o->jerk_ms = 0;
+		if (hit.fire) {
+			last_click_ms = now;
+		} else {
+			proto_printf("I,tap,no,%d,%d,%d,quiet,%d\n", (int)hit.pointer_jerk, (int)hit.clicker_jerk,
+				     (int)hit.dt_ms, (int)hit.quiet_deg);
+		}
+		return hit;
+	}
+	return hit;
+}
 
 static struct ring_slot *find_or_add(uint32_t id, uint32_t now)
 {
@@ -216,6 +422,7 @@ static void handle_packet(const struct rx_item *it)
 		k_spin_unlock(&ring_lock, key);
 		return;
 	}
+	jerk_update(s, p.accel, it->t_us, now);
 	s->last_rx_ms = now;
 	s->flags = p.flags;
 	s->fw_version = p.fw_version;
@@ -234,6 +441,7 @@ static void handle_packet(const struct rx_item *it)
 
 	choose_active(s, now);
 	bool is_active = (int)(s - rings) == active;
+	struct tap_hit tap = tap_check(now);
 	struct proto_link_info li = {
 		.device_id = s->id,
 		.rx_packets = s->track.packets,
@@ -245,6 +453,16 @@ static void handle_packet(const struct rx_item *it)
 	};
 	k_spin_unlock(&ring_lock, key);
 
+	if (tap.fire) {
+		int32_t ux, uy;
+
+		holding = true;
+		hold_until_ms = now + TAP_HOLD_MS;
+		rewind_motion(TAP_REWIND_MS + (now - tap.pointer_jerk_ms), now, &ux, &uy);
+		usb_io_click(1);
+		proto_printf("I,tap,%d,%d,%d,quiet,%d,rewind,%d,%d\n", (int)tap.pointer_jerk, (int)tap.clicker_jerk,
+			     (int)tap.dt_ms, (int)tap.quiet_deg, (int)ux, (int)uy);
+	}
 	if (atomic_get(&raw_on) && res == LINK_MOTION) {
 		proto_printf("R,%04x,%u,%u,%d,%d,%d,%d,%d,%d\n", (unsigned int)(p.device_id & 0xffffu),
 			     it->t_us, dc, dg[0], dg[1], dg[2], p.accel[0], p.accel[1], p.accel[2]);
@@ -266,7 +484,8 @@ static void handle_packet(const struct rx_item *it)
 	struct pe_output out;
 
 	pe_update(&engine, dg, dc, p.accel, &out);
-	usb_io_move(out.dx, out.dy);
+	record_rotation(&out, now);
+	send_motion(out.dx, out.dy, now);
 	proto_telem_update(&engine, &out, dc, p.accel);
 }
 
@@ -325,7 +544,12 @@ static void print_rings(void)
 static bool receiver_cmd(int argc, char **argv)
 {
 	if (strcmp(argv[0], "help") == 0) {
-		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 bootloader\n");
+		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 tap,0|1 bootloader\n");
+		return true;
+	}
+	if (strcmp(argv[0], "tap") == 0 && argc == 2) {
+		atomic_set(&tap_on, strcmp(argv[1], "0") != 0);
+		proto_printf("OK,tap,%d\n", (int)atomic_get(&tap_on));
 		return true;
 	}
 	if (strcmp(argv[0], "raw") == 0 && argc == 2) {
@@ -361,6 +585,11 @@ static bool receiver_cmd(int argc, char **argv)
 
 		pinned_id = id;
 		k_spin_unlock(&ring_lock, key);
+		int err = settings_save_one("rx/ring", &id, sizeof(id));
+
+		if (err) {
+			proto_printf("ERR,ring,save,%d\n", err);
+		}
 		proto_printf("OK,ring,%s\n", argv[1]);
 		return true;
 	}
@@ -409,6 +638,7 @@ int main(void)
 	gpio_pin_configure_dt(&led_red, GPIO_OUTPUT_INACTIVE);
 
 	cfg_store_init();
+	(void)settings_load_subtree("rx"); /* the pinned ring */
 	struct pe_config c;
 
 	cfg_store_get(&c, &engine_cfg_gen);

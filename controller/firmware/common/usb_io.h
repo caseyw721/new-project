@@ -29,6 +29,13 @@ bool usb_io_host_listening(void);
  */
 void usb_io_move(int32_t dx, int32_t dy);
 
+/* Queue a mouse button state (bit 0 = left), sent in its own report after any
+ * pending motion. A click is the state 1 followed by 0. Dropped while the
+ * cursor is disabled or the queue is full.
+ */
+void usb_io_buttons(uint8_t mask);
+void usb_io_click(uint8_t mask);
+
 /* Enable/disable cursor output (motion is discarded while disabled). */
 void usb_io_set_cursor_enabled(bool enabled);
 

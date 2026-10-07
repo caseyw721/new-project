@@ -52,6 +52,8 @@ static volatile bool usb_suspended;
 /*
  * Report (6 bytes, no report ID):
  *   [0] buttons (3 bits)  [1..2] X int16  [3..4] Y int16  [5] wheel int8
+ * Button changes go out one per report, each in a report of its own after
+ * any pending motion, so a press always lands where the cursor was moved to.
  * 16-bit relative X/Y as used by gaming mice: large fast moves are never
  * clipped to +-127 per report.
  */
@@ -104,6 +106,9 @@ static bool hid_ready;
 static bool hid_in_flight;
 static bool cursor_enabled = true;
 static int32_t pend_dx, pend_dy;
+static uint8_t btn_cur;             /* button state in the last report */
+static uint8_t btn_queue[8];        /* button states still to send */
+static uint8_t btn_head, btn_count;
 
 static int16_t take_chunk(int32_t *pend)
 {
@@ -118,15 +123,24 @@ static void hid_kick(void)
 {
 	k_spinlock_key_t key = k_spin_lock(&hid_lock);
 
-	if (!hid_ready || hid_in_flight || usb_suspended || (pend_dx == 0 && pend_dy == 0)) {
+	bool motion = pend_dx != 0 || pend_dy != 0;
+
+	if (!hid_ready || hid_in_flight || usb_suspended || (!motion && btn_count == 0)) {
 		k_spin_unlock(&hid_lock, key);
 		return;
 	}
-	int16_t x = take_chunk(&pend_dx);
-	int16_t y = take_chunk(&pend_dy);
+	int16_t x = 0, y = 0;
 
+	if (motion) {
+		x = take_chunk(&pend_dx);
+		y = take_chunk(&pend_dy);
+	} else {
+		btn_cur = btn_queue[btn_head];
+		btn_head = (uint8_t)((btn_head + 1) % ARRAY_SIZE(btn_queue));
+		btn_count--;
+	}
 	hid_in_flight = true;
-	hid_report[0] = 0;
+	hid_report[0] = btn_cur;
 	sys_put_le16((uint16_t)x, &hid_report[1]);
 	sys_put_le16((uint16_t)y, &hid_report[3]);
 	hid_report[5] = 0;
@@ -150,6 +164,8 @@ static void hid_iface_ready(const struct device *dev, const bool ready)
 	hid_ready = ready;
 	hid_in_flight = false;
 	pend_dx = pend_dy = 0;
+	btn_cur = 0;
+	btn_head = btn_count = 0;
 	k_spin_unlock(&hid_lock, key);
 }
 
@@ -181,6 +197,26 @@ static const struct hid_device_ops hid_ops = {
 	.get_report = hid_get_report,
 	.input_report_done = hid_report_done,
 };
+
+void usb_io_buttons(uint8_t mask)
+{
+	k_spinlock_key_t key = k_spin_lock(&hid_lock);
+
+	if (!cursor_enabled || !hid_ready || btn_count >= ARRAY_SIZE(btn_queue)) {
+		k_spin_unlock(&hid_lock, key);
+		return;
+	}
+	btn_queue[(btn_head + btn_count) % ARRAY_SIZE(btn_queue)] = mask & 0x07;
+	btn_count++;
+	k_spin_unlock(&hid_lock, key);
+	hid_kick();
+}
+
+void usb_io_click(uint8_t mask)
+{
+	usb_io_buttons(mask);
+	usb_io_buttons(0);
+}
 
 void usb_io_move(int32_t dx, int32_t dy)
 {
