@@ -62,8 +62,13 @@ true rotation of gravity. They check:
 - float precision over long runs;
 - that the test app's calibration math and the engine agree for a sensor mounted at any angle.
 
-The firmware itself is compiled but **not yet run on real hardware**. The first bench session is
-its first real test.
+**First run on real hardware (2026-10-07):** the ring firmware runs on a XIAO nRF52840 Sense as a
+wired mouse (IMU ok, 33 samples per 20 ms). The receiver has not run on a dongle yet.
+
+Updating a ring that already runs this firmware needs no button: send `bootloader` over its serial
+port and copy `ring.uf2` onto the XIAO-SENSE drive that appears. USB is enabled at boot when the
+cable is already in, because a bootloader hand-off (right after an update) never delivers the
+"cable plugged in" event.
 
 ## Building
 

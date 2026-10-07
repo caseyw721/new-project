@@ -46,6 +46,9 @@ wire is positive before soldering.
    means it worked.
 4. Repeat for the second XIAO.
 
+Once a XIAO runs the ring software, later updates don't need the button: the `bootloader` serial
+command opens the same drive.
+
 The ring is now running. While it's plugged into a computer it acts as a **wired mouse** (the
 "fastest possible" reference test). Unplugged, it runs on battery and talks to the receiver.
 

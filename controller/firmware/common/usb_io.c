@@ -14,6 +14,8 @@
 #include <zephyr/usb/class/usbd_hid.h>
 #include <zephyr/usb/usbd.h>
 
+#include <hal/nrf_power.h>
+
 /* Per-app USB identity: USB_IO_PID, USB_IO_PRODUCT, USB_IO_MAX_POWER_2MA */
 #include "usb_ids.h"
 
@@ -419,7 +421,11 @@ int usb_io_init(usb_io_line_cb cb)
 
 	uart_irq_rx_enable(cdc_dev);
 
-	if (!usbd_can_detect_vbus(&app_usbd)) {
+	/* The VBUS-detected event only fires when a cable is plugged in. A
+	 * bootloader that hands over with the cable already in (right after a
+	 * firmware update) has used it up, so check the current state too.
+	 */
+	if (!usbd_can_detect_vbus(&app_usbd) || nrf_power_usbregstatus_vbusdet_get(NRF_POWER)) {
 		err = usbd_enable(&app_usbd);
 	}
 	return err;

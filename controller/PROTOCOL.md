@@ -21,6 +21,7 @@ comma-separated fields.
 | `rings` | *Receiver only.* List the rings it can hear. |
 | `ring,<id>` / `ring,auto` | *Receiver only.* Pin one ring, or let the first ring that moves take over. |
 | `info` | *Ring only.* Mode, IMU status and radio counters. |
+| `bootloader` | *Ring only.* Restart into the XIAO-SENSE drive for a firmware update, like a double-press of reset. |
 
 Replies start with `OK,` or `ERR,`. Informational lines start with `I,`.
 

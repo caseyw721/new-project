@@ -18,9 +18,11 @@
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
 
 #include <esb.h>
+#include <hal/nrf_power.h>
 
 #include "cfg_store.h"
 #include "fw_version.h"
@@ -41,6 +43,7 @@
 #define WAKE_ACCEL_LSB 820         /* 0.1 g away from the resting value */
 #define TX_STUCK_US 5000           /* recover if a TX event never arrives */
 #define IMU_RETRY_MS 1000
+#define BOOTLOADER_UF2_MAGIC 0x57  /* GPREGRET value: bootloader opens its UF2 drive */
 
 /* ---- LEDs (active-low, polarity handled by devicetree) ---- */
 static const struct gpio_dt_spec led_red = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -415,7 +418,17 @@ K_THREAD_DEFINE(status_thread, 1024, status_thread_fn, NULL, NULL, NULL, K_PRIO_
 static bool ring_cmd(int argc, char **argv)
 {
 	if (strcmp(argv[0], "help") == 0) {
-		proto_printf("I,help,ring commands: info\n");
+		proto_printf("I,help,ring commands: info bootloader\n");
+		return true;
+	}
+	if (strcmp(argv[0], "bootloader") == 0 && argc == 1) {
+		/* Restart into the XIAO's UF2 drive, as a double-press of reset does
+		 * (Adafruit nRF52 bootloader reads this value at boot).
+		 */
+		proto_printf("OK,bootloader\n");
+		k_msleep(50);
+		nrf_power_gpregret_set(NRF_POWER, 0, BOOTLOADER_UF2_MAGIC);
+		sys_reboot(SYS_REBOOT_WARM);
 		return true;
 	}
 	if (strcmp(argv[0], "info") == 0 && argc == 1) {
