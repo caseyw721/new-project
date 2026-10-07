@@ -54,12 +54,15 @@ struct pe_config {
 	float axis_right[3];      /* +rotation about this moves cursor right (fixed-axis mode) */
 	float axis_up[3];         /* +rotation about this moves cursor up (fixed-axis mode) */
 	float forward[3];         /* pointing direction (tilt-compensated mode) */
-	uint8_t tilt_comp;        /* 1 = keep horizontal hand motion horizontal when rolled */
+	uint8_t tilt_comp;        /* 0 fixed axes, 1 gravity (horizontal stays horizontal when rolled), 2 blend */
 
 	/* Automatic gyro bias (zero-rate offset) tracking. */
 	uint8_t auto_bias;
 	float still_thresh_dps;   /* max wobble allowed for "still" */
-	uint8_t reserved[2];
+	uint8_t tx_div;           /* ring: radio packet every Nth IMU sample (0 or 1 = every one): two rings
+	                           * at ~1,600 packets/s each lost 60-85% to collisions on the shared channel */
+	uint8_t twist_gate;       /* fixed-axis mode: 1 = a turn mostly about `forward` (the finger, i.e. a wrist
+	                           * twist) does not move the cursor */
 };
 
 struct pe_output {

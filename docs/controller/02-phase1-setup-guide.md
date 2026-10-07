@@ -5,7 +5,8 @@
 1. **Solder** each battery to the back of its XIAO board (2 wires each).
 2. **Load the ring software** onto each XIAO: double-press its reset button, then drag a file onto
    the drive that appears.
-3. **Load the receiver software** onto the Nordic dongle with Nordic's free *Programmer* app.
+3. **Load the receiver software** onto the USB dongle (drag a file, or Nordic's free *Programmer*
+   app for Nordic's own dongle).
 4. **Open the test app** in Chrome, connect, and calibrate.
 5. **Run the tests** for each spot on your hand, plus a normal mouse for comparison.
 
@@ -15,6 +16,7 @@ Everything you need is in this repo:
 |---|---|
 | `controller/firmware/prebuilt/ring.uf2` | Software for the XIAO boards (the ring) |
 | `controller/firmware/prebuilt/receiver.hex` | Software for the Nordic dongle (the receiver) |
+| `controller/firmware/prebuilt/receiver-mdk.uf2` | Software for the Makerdiary MDK dongle (the receiver) |
 | `controller/test-app/index.html` | The test app (opens in Chrome) |
 
 To get the files, open https://github.com/caseyw721/new-project (branch `main`) and click
@@ -52,21 +54,37 @@ command opens the same drive.
 The ring is now running. While it's plugged into a computer it acts as a **wired mouse** (the
 "fastest possible" reference test). Unplugged, it runs on battery and talks to the receiver.
 
-## 3. Load the receiver software (Nordic dongle)
+## 3. Load the receiver software (USB dongle)
+
+Check which dongle you have: the **Makerdiary nRF52840 MDK USB Dongle** has one button; Nordic's
+**nRF52840 Dongle** (PCA10059) has two.
+
+**Makerdiary nRF52840 MDK USB Dongle**
+
+1. Unplug the dongle. **Hold its button down while you plug it in**, and let go after 2 seconds.
+   A drive called **UF2BOOT** appears. (Pressing the button while it's already plugged in does
+   nothing.)
+2. Drag **`receiver-mdk.uf2`** onto that drive. The drive disappears by itself after a few seconds.
+   That means it worked, and the dongle restarts as *Pointer Receiver*.
+3. If its lights come on but the computer doesn't see it, push it all the way into the socket.
+   The plug is the edge of the circuit board, and its power contacts are longer than its data
+   contacts, so a loose fit powers it without connecting it.
+
+**Nordic nRF52840 Dongle (PCA10059)**
 
 1. Install **nRF Connect for Desktop** from nordicsemi.com (free). Open it and install the
    **Programmer** app inside it.
 2. Plug the dongle into a USB port.
-3. Press the dongle's small **RESET button**. It's the tiny button that sticks out **sideways**,
-   next to the round white button. The red light starts slowly pulsing, which means it's ready for
-   new software.
+3. Press the dongle's **RESET button**. It's on the far end of the board from the USB plug, and it
+   faces outward, not up: push it toward the USB plug. The red light starts slowly fading in and
+   out, which means it's ready for new software.
 4. In Programmer, pick the dongle from the device list (it shows up as *Open DFU Bootloader*),
    click **Add file**, choose **`receiver.hex`**, then click **Write**.
 5. When it finishes, the dongle restarts with the new software.
 
 *Command-line alternative:* if you have Nordic's `nrfutil` (with the `nrf5sdk-tools` command), run
 `nrfutil nrf5sdk-tools dfu usb-serial -pkg receiver-dfu.zip -p <port>` while the red light is
-pulsing.
+fading.
 
 ## 4. Turn off your computer's mouse acceleration
 

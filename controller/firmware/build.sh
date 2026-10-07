@@ -67,17 +67,26 @@ export ZEPHYR_SDK_INSTALL_DIR="$SDK"
 cd "$NCS"
 west build -p -b xiao_ble/nrf52840/sense -d "$WORKSPACE/build_ring" "$HERE/ring"
 west build -p -b nrf52840dongle/nrf52840 -d "$WORKSPACE/build_receiver" "$HERE/receiver"
+# Makerdiary nRF52840 MDK USB Dongle: same code, its LED pins (receiver/boards/), UF2 bootloader.
+west build -p -b nrf52840_mdk_usb_dongle/nrf52840 -d "$WORKSPACE/build_receiver_mdk" "$HERE/receiver"
 
 mkdir -p "$OUT"
 cp "$WORKSPACE/build_ring/ring/zephyr/zephyr.uf2" "$OUT/ring.uf2"
 cp "$WORKSPACE/build_receiver/receiver/zephyr/zephyr.hex" "$OUT/receiver.hex"
+python3 "$NCS/zephyr/scripts/build/uf2conv.py" -c -f 0xADA52840 -b 0x1000 \
+  -o "$OUT/receiver-mdk.uf2" "$WORKSPACE/build_receiver_mdk/receiver/zephyr/zephyr.bin"
 
 # Optional: package for the dongle's USB bootloader (command-line flashing).
-if command -v nrfutil >/dev/null 2>&1 && nrfutil pkg generate --help >/dev/null 2>&1; then
-  nrfutil pkg generate --hw-version 52 --sd-req=0x00 \
-    --application "$OUT/receiver.hex" --application-version 1 "$OUT/receiver-dfu.zip"
+if command -v nrfutil >/dev/null 2>&1; then
+  if nrfutil nrf5sdk-tools pkg generate --help >/dev/null 2>&1; then   # nrfutil 7+
+    nrfutil nrf5sdk-tools pkg generate --hw-version 52 --sd-req 0x00 \
+      --application "$OUT/receiver.hex" --application-version 1 "$OUT/receiver-dfu.zip"
+  elif nrfutil pkg generate --help >/dev/null 2>&1; then               # nrfutil 6
+    nrfutil pkg generate --hw-version 52 --sd-req=0x00 \
+      --application "$OUT/receiver.hex" --application-version 1 "$OUT/receiver-dfu.zip"
+  fi
 fi
 
-(cd "$OUT" && (sha256sum ring.uf2 receiver.hex receiver-dfu.zip 2>/dev/null ||
-               shasum -a 256 ring.uf2 receiver.hex receiver-dfu.zip) > SHA256SUMS || true)
+(cd "$OUT" && (sha256sum ring.uf2 receiver.hex receiver-dfu.zip receiver-mdk.uf2 2>/dev/null ||
+               shasum -a 256 ring.uf2 receiver.hex receiver-dfu.zip receiver-mdk.uf2) > SHA256SUMS || true)
 echo "Built: $OUT"

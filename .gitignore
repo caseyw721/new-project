@@ -4,3 +4,4 @@ controller/firmware/tests/*.o
 # node
 node_modules/
 package-lock.json
+controller/firmware/tests/test_runner.dSYM/

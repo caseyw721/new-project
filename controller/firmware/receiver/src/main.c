@@ -16,9 +16,11 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
 
 #include <esb.h>
+#include <hal/nrf_power.h>
 
 #include "cfg_store.h"
 #include "fw_version.h"
@@ -42,7 +44,13 @@ struct rx_item {
 	uint8_t data[LINK_PACKET_SIZE];
 	uint8_t len;
 	int8_t rssi_dbm;
+	uint32_t t_us; /* when the radio handed it over (receiver clock, wraps in 71 min) */
 };
+
+/* `raw,1`: every packet from every ring as an R line (see PROTOCOL.md), for recording two rings at once */
+static atomic_t raw_on;
+
+#define BOOTLOADER_UF2_MAGIC 0x57 /* GPREGRET value: a UF2 bootloader (Makerdiary dongle) opens its drive */
 
 K_MSGQ_DEFINE(rx_queue, sizeof(struct rx_item), 32, 4);
 static atomic_t rx_queue_drops;
@@ -63,6 +71,7 @@ static void esb_event(const struct esb_evt *evt)
 		memcpy(it.data, pl.data, pl.length);
 		it.len = pl.length;
 		it.rssi_dbm = (int8_t)-pl.rssi; /* ESB reports the magnitude */
+		it.t_us = k_cyc_to_us_floor32(k_cycle_get_32());
 		if (k_msgq_put(&rx_queue, &it, K_NO_WAIT) != 0) {
 			atomic_inc(&rx_queue_drops);
 		}
@@ -236,6 +245,10 @@ static void handle_packet(const struct rx_item *it)
 	};
 	k_spin_unlock(&ring_lock, key);
 
+	if (atomic_get(&raw_on) && res == LINK_MOTION) {
+		proto_printf("R,%04x,%u,%u,%d,%d,%d,%d,%d,%d\n", (unsigned int)(p.device_id & 0xffffu),
+			     it->t_us, dc, dg[0], dg[1], dg[2], p.accel[0], p.accel[1], p.accel[2]);
+	}
 	if (!is_active) {
 		return;
 	}
@@ -312,7 +325,20 @@ static void print_rings(void)
 static bool receiver_cmd(int argc, char **argv)
 {
 	if (strcmp(argv[0], "help") == 0) {
-		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto\n");
+		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 bootloader\n");
+		return true;
+	}
+	if (strcmp(argv[0], "raw") == 0 && argc == 2) {
+		atomic_set(&raw_on, strcmp(argv[1], "0") != 0);
+		proto_printf("OK,raw,%d\n", (int)atomic_get(&raw_on));
+		return true;
+	}
+	if (strcmp(argv[0], "bootloader") == 0 && argc == 1) {
+		/* Restart into the UF2 drive, as holding the button while plugging in does (Makerdiary dongle) */
+		proto_printf("OK,bootloader\n");
+		k_msleep(50);
+		nrf_power_gpregret_set(NRF_POWER, 0, BOOTLOADER_UF2_MAGIC);
+		sys_reboot(SYS_REBOOT_WARM);
 		return true;
 	}
 	if (strcmp(argv[0], "rings") == 0) {

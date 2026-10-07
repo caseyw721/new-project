@@ -169,7 +169,7 @@ bool pe_config_sanitize(struct pe_config *cfg)
 	cfg->deadzone_dps = clampf(cfg->deadzone_dps, 0.0f, 20.0f);
 	cfg->predict_ms = clampf(cfg->predict_ms, 0.0f, 50.0f);
 	cfg->still_thresh_dps = clampf(cfg->still_thresh_dps, 0.05f, 50.0f);
-	cfg->tilt_comp = cfg->tilt_comp ? 1 : 0;
+	cfg->tilt_comp = cfg->tilt_comp > 2 ? 1 : cfg->tilt_comp; /* 0 fixed, 1 gravity, 2 blend */
 	cfg->auto_bias = cfg->auto_bias ? 1 : 0;
 
 	sanitize_axis(cfg->axis_right, def.axis_right);
@@ -421,7 +421,7 @@ void pe_update(struct pe_state *st, const int32_t dgyro[3], uint32_t dcount,
 	const float *ax_u = c->axis_up;
 	float tr[3], tu[3];
 
-	if (c->tilt_comp && st->up_valid) {
+	if (c->tilt_comp == 1 && st->up_valid) {
 		cross3(c->forward, st->up, tu);
 		if (norm3(tu) > TILT_MIN_HORIZ && normalize3(tu)) {
 			tr[0] = -st->up[0];
@@ -430,9 +430,46 @@ void pe_update(struct pe_state *st, const int32_t dgyro[3], uint32_t dcount,
 			ax_r = tr;
 			ax_u = tu;
 		}
+	} else if (c->tilt_comp == 2 && st->up_valid) {
+		/* Blend: gravity's axes (turn about vertical, tip up about forward x up) while the finger is near
+		 * level, where they ignore how far the wrist is rolled; the fixed (learned) axes as the finger points
+		 * down, where a turn about vertical is the same as a wrist twist. Weight = cos^2 of the finger's
+		 * elevation. (Live 2026-10-07: wrist rolled 90 deg made up-down go sideways on the fixed axes.)
+		 */
+		cross3(c->forward, st->up, tu);
+		float horiz = norm3(tu); /* cos(elevation): forward and up are unit vectors */
+		float wg = horiz > 0.15f ? horiz * horiz : 0.0f;
+
+		if (wg > 0.0f && normalize3(tu)) {
+			for (int i = 0; i < 3; i++) {
+				tr[i] = wg * -st->up[i] + (1.0f - wg) * c->axis_right[i];
+				tu[i] = wg * tu[i] + (1.0f - wg) * c->axis_up[i];
+			}
+			if (normalize3(tr) && normalize3(tu)) {
+				ax_r = tr;
+				ax_u = tu;
+			}
+		}
 	}
 
 	float w[2] = {dot3(rate, ax_r), dot3(rate, ax_u)};
+
+	/* Twist gate (fixed-axis mode): a turn that is mostly about the finger (`forward`) is a wrist twist, not
+	 * pointing, so the cursor holds still for it: full motion below 50 % twist, none above 80 %. Measured
+	 * 2026-10-07 on three postures (sitting back, sitting forward, standing): twist leak 0.15-0.31 -> 0.04-0.17
+	 * of the real moves, which keep 94-100 % of their motion. Pinch-and-twist on a knob will use the twist.
+	 */
+	if (c->tilt_comp != 1 && c->twist_gate) {
+		float rm = norm3(rate);
+
+		if (rm > 1e-3f) {
+			float gate = (0.8f - fabsf(dot3(rate, c->forward)) / rm) / 0.3f;
+
+			gate = gate < 0.0f ? 0.0f : (gate > 1.0f ? 1.0f : gate);
+			w[0] *= gate;
+			w[1] *= gate;
+		}
+	}
 	float wmag = sqrtf(w[0] * w[0] + w[1] * w[1]);
 
 	/* Soft radial deadzone: removes residual bias creep, keeps small motions. */

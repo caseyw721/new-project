@@ -1,0 +1,13 @@
+/* Makerdiary nRF52840 MDK USB Dongle: one RGB LED (red P0.23, green P0.22).
+ * The receiver uses led0 = green "ring connected" and led1 = red, as on
+ * Nordic's dongle, so swap this board's default aliases (led0 is red here).
+ * A board overlay replaces app.overlay, so pull it in.
+ */
+#include "../app.overlay"
+
+/ {
+	aliases {
+		led0 = &led0_green;
+		led1 = &led0_red;
+	};
+};

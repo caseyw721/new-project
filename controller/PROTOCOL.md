@@ -20,6 +20,8 @@ comma-separated fields.
 | `help` | List the commands. |
 | `rings` | *Receiver only.* List the rings it can hear. |
 | `ring,<id>` / `ring,auto` | *Receiver only.* Pin one ring, or let the first ring that moves take over. |
+| `raw,1` / `raw,0` | *Receiver only.* Start or stop an `R` line for every packet from every ring (both rings at once, for recording a pinch). |
+| `bootloader` | *Receiver only (Makerdiary MDK dongle).* Restart into the UF2BOOT drive, as holding its button while plugging it in does. |
 | `info` | *Ring only.* Mode, IMU status and radio counters. |
 | `bootloader` | *Ring only.* Restart into the XIAO-SENSE drive for a firmware update, like a double-press of reset. |
 
@@ -38,9 +40,11 @@ Replies start with `OK,` or `ERR,`. Informational lines start with `I,`.
 | `deadzone` | Rotation below this (deg/s) is ignored | 0.15 |
 | `predict` | Look-ahead in ms (0 = off) | 0 |
 | `still` | Max wobble (deg/s) that still counts as "held still" | 1.5 |
-| `tilt` | 1 = keep horizontal motion horizontal when the hand is rolled | 1 |
+| `tilt` | 0 = fixed axes (`right`, `up`); 1 = gravity: keep horizontal motion horizontal when the hand is rolled; 2 = blend: gravity's axes while the finger (`fwd`) is level, the fixed axes as it points down | 1 |
 | `autobias` | 1 = keep re-learning gyro drift automatically | 1 |
 | `right`, `up`, `fwd` | Axis vectors from calibration (sensor frame) | board guess |
+| `twistgate` | 1 = a turn mostly about the finger (`fwd`), i.e. a wrist twist, does not move the cursor (fixed and blend modes) | 0 |
+| `txdiv` | *Ring.* Send a radio packet every Nth IMU sample (0 or 1 = every one, about 1,600/s). Two rings on one receiver need it: at full rate they collide (60–85% lost) | 0 |
 
 ## Telemetry line (device sends, 50 times per second)
 
@@ -67,6 +71,10 @@ Replies start with `OK,` or `ERR,`. Informational lines start with `I,`.
 | 26 | signal strength (last packet) | dBm |
 | 27 | ring transmit failures this interval | count |
 | 28 | ring flags (1 = idle, 2 = IMU error) | bits |
+
+## Raw line (receiver, `raw,1`)
+
+`R,<ring id, last 4 hex digits>,<receiver time µs>,<IMU samples since the last packet>,<gyro x>,<gyro y>,<gyro z>,<accel x>,<accel y>,<accel z>`: one per packet (about 1,600 per second per moving ring). Gyro values are the raw LSB summed over those samples; accel is the newest raw LSB. Lines that don't fit the USB buffer are dropped, never delayed.
 
 ## Radio packet (ring to receiver)
 

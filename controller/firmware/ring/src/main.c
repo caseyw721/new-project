@@ -145,6 +145,23 @@ static void engine_sync_config(void)
 	}
 }
 
+/* The txdiv setting, re-read whenever the settings change. */
+static uint8_t tx_div_now(void)
+{
+	static uint32_t gen = UINT32_MAX;
+	static uint8_t div = 1;
+
+	if (cfg_store_generation() != gen) {
+		struct pe_config c;
+
+		cfg_store_get(&c, &gen);
+		div = c.tx_div > 1 ? c.tx_div : 1;
+	}
+	return div;
+}
+
+static uint8_t tx_skip;
+
 static void wired_process(const int16_t g[3], const int16_t a[3])
 {
 	int32_t dg[3] = {g[0], g[1], g[2]};
@@ -326,7 +343,10 @@ static void motion_thread_fn(void *p1, void *p2, void *p3)
 			continue;
 		}
 
-		send_packet();
+		if (++tx_skip >= tx_div_now()) {   /* txdiv: two rings share one radio channel */
+			tx_skip = 0;
+			send_packet();
+		}
 
 		bool done;
 		bool still = block_add(&blk, g, &done);

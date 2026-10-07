@@ -44,7 +44,7 @@ bool proto_take_rezero_request(void)
 /* ------------------------------------------------------------------ */
 /* Settings keys                                                        */
 
-enum key_type { KEY_F32, KEY_BOOL, KEY_VEC3 };
+enum key_type { KEY_F32, KEY_BOOL, KEY_VEC3, KEY_U8 };
 
 struct key_def {
 	const char *name;
@@ -55,6 +55,7 @@ struct key_def {
 #define KEY_F(n, f) {n, KEY_F32, offsetof(struct pe_config, f)}
 #define KEY_B(n, f) {n, KEY_BOOL, offsetof(struct pe_config, f)}
 #define KEY_V(n, f) {n, KEY_VEC3, offsetof(struct pe_config, f)}
+#define KEY_U(n, f) {n, KEY_U8, offsetof(struct pe_config, f)}
 
 static const struct key_def keys[] = {
 	KEY_F("gain", gain),
@@ -66,11 +67,13 @@ static const struct key_def keys[] = {
 	KEY_F("deadzone", deadzone_dps),
 	KEY_F("predict", predict_ms),
 	KEY_F("still", still_thresh_dps),
-	KEY_B("tilt", tilt_comp),
+	KEY_U("tilt", tilt_comp),
 	KEY_B("autobias", auto_bias),
 	KEY_V("right", axis_right),
 	KEY_V("up", axis_up),
 	KEY_V("fwd", forward),
+	KEY_U("txdiv", tx_div),
+	KEY_U("twistgate", twist_gate),
 };
 
 static const struct key_def *find_key(const char *name)
@@ -96,6 +99,7 @@ static void print_key(const struct pe_config *c, const struct key_def *k)
 		break;
 	}
 	case KEY_BOOL:
+	case KEY_U8:
 		proto_printf("C,%s,%u\n", k->name, (unsigned int)*base);
 		break;
 	case KEY_VEC3: {
@@ -158,6 +162,16 @@ static void cmd_set(int argc, char **argv)
 			return;
 		}
 		*base = v != 0.0f ? 1 : 0;
+		break;
+	}
+	case KEY_U8: {
+		float v;
+
+		if (argc != 3 || !parse_float(argv[2], &v) || v < 0.0f || v > 255.0f) {
+			proto_printf("ERR,set,%s needs a whole number 0-255\n", k->name);
+			return;
+		}
+		*base = (uint8_t)v;
 		break;
 	}
 	case KEY_VEC3: {
