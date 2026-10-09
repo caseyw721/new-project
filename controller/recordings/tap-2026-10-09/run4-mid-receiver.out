@@ -1,0 +1,26 @@
+00:40:48 setup OK,tap,1
+00:40:48 setup I,tap,1014,497,11,quiet,3,rewind,-1045,961
+00:40:53 ready I,tap,1783,520,-36,quiet,13,rewind,-23,90
+00:41:06 A2 I,tap,1203,5282,7,quiet,8,rewind,86,-311
+00:41:07 A3 I,tap,solo,577,1874,quiet,4
+00:41:09 A4 I,tap,solo,0,1088,quiet,2
+00:41:10 A5 I,tap,1232,6938,-30,quiet,3,rewind,-186,-188
+00:41:12 A6 I,tap,1133,4125,-2,quiet,1,rewind,-111,-167
+00:41:14 A7 I,tap,solo,494,5181,quiet,1
+00:41:15 A8 I,tap,1012,522,12,quiet,1,rewind,-41,-235
+00:41:17 B-intro I,tap,solo,0,1738,quiet,2
+00:41:40 C1 I,tap,3553,384,17,quiet,2,rewind,-174,-71
+00:41:43 C2 I,tap,1061,5163,-8,quiet,2,rewind,-17,-22
+00:41:47 C3 I,tap,solo,597,1022,quiet,2
+00:41:51 C4 I,tap,solo,941,2217,quiet,3
+00:41:55 C5 I,tap,1895,1216,38,quiet,1,rewind,-30,-15
+00:41:58 C6 I,tap,solo,794,2725,quiet,1
+00:42:01 C7 I,tap,1221,3164,-35,quiet,4,rewind,-19,1
+00:42:06 C8 I,tap,solo,905,3037,quiet,1
+00:42:08 C9 I,tap,solo,386,1681,quiet,4
+00:42:12 C10 I,tap,1399,4068,19,quiet,3,rewind,-92,-60
+00:42:13 C10 I,tap,1031,3555,-24,quiet,3,rewind,-8,-34
+00:42:15 C11 I,tap,solo,861,2690,quiet,4
+00:42:19 C12 I,tap,1058,3180,-14,quiet,1,rewind,-65,-108
+00:42:20 C12 I,tap,1015,2848,-17,quiet,3,rewind,5,-95
+recorded run4 packets per ring: {'29c3': 61034, 'aa2c': 17338}

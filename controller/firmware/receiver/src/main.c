@@ -160,6 +160,14 @@ static float tap_jerk_clicker = 300.0f;  /* on a clicker ring */
 static float tap_quiet_max_deg = 20.0f;  /* rotation in the quiet window must stay under this for a shock to be a tap */
 static uint32_t tap_rewind_ms = 150;     /* motion before the pointer ring's shock that is undone */
 static uint32_t tap_hold_ms = 350;       /* motion ignored after the click (fingers opening) */
+/* Solo tap (2026-10-09, user's idea): the middle finger taps the thumb that wears a clicker ring, the pointing finger
+ * stays still. One shock on a clicker ring, none on the pointer ring, and the pointer ring quiet both in
+ * [now-400, now-150) and in [now-150, now) ms: recorded taps turn it 1-8 degrees, hand waves 20+. No rewind
+ * (nothing curled), a short hold. `tapsolo,<jerk>,<quiet deg>,<before deg>`; jerk 0 turns it off. */
+static float tap_solo_jerk = 1000.0f;
+static float tap_solo_quiet_deg = 10.0f;
+static float tap_solo_before_deg = 10.0f;
+#define TAP_SOLO_HOLD_MS 100
 
 static atomic_t tap_on = ATOMIC_INIT(1);
 static int32_t hist_x[HIST_LEN], hist_y[HIST_LEN]; /* cursor motion sent, per millisecond */
@@ -171,6 +179,7 @@ static uint32_t last_click_ms;
 
 struct tap_hit {
 	bool fire;
+	bool solo;                   /* clicker-ring-only tap: no rewind */
 	float pointer_jerk, clicker_jerk;
 	int32_t dt_ms;               /* clicker shock minus pointer shock */
 	uint32_t pointer_jerk_ms;
@@ -285,8 +294,43 @@ static struct tap_hit tap_check(uint32_t now)
 		return hit;
 	}
 	struct ring_slot *a = &rings[active];
+	bool pointer_shock = a->jerk_ms != 0 && now - a->jerk_ms <= TAP_WINDOW_MS && a->jerk >= tap_jerk_pointer;
 
-	if (a->jerk_ms == 0 || now - a->jerk_ms > TAP_WINDOW_MS || a->jerk < tap_jerk_pointer) {
+	if (!pointer_shock) {
+		if (tap_solo_jerk <= 0.0f) {
+			return hit;
+		}
+		for (int i = 0; i < MAX_RINGS; i++) {
+			struct ring_slot *o = &rings[i];
+
+			if (i == active || !o->used || o->jerk_ms == 0 || now - o->jerk_ms > TAP_WINDOW_MS ||
+			    o->jerk < tap_solo_jerk) {
+				continue;
+			}
+			/* wait until the pointer ring has had the whole window to show its own shock (a pinch) */
+			if (now - o->jerk_ms < TAP_WINDOW_MS) {
+				return hit;
+			}
+			uint32_t ago = now - o->jerk_ms;
+			float quiet = rotation_between(TAP_QUIET_FROM_MS + ago, TAP_QUIET_TO_MS + ago, now);
+			float before = rotation_between(TAP_QUIET_TO_MS + ago, ago, now);
+
+			hit.solo = true;
+			hit.pointer_jerk = a->jerk_ms != 0 && now - a->jerk_ms <= 2 * TAP_WINDOW_MS ? a->jerk : 0.0f;
+			hit.clicker_jerk = o->jerk;
+			hit.dt_ms = 0;
+			hit.pointer_jerk_ms = o->jerk_ms;
+			hit.quiet_deg = quiet;
+			hit.fire = quiet < tap_solo_quiet_deg && before < tap_solo_before_deg;
+			o->jerk_ms = 0;
+			if (hit.fire) {
+				last_click_ms = now;
+			} else {
+				proto_printf("I,tap,no,solo,%d,%d,quiet,%d,before,%d\n", (int)hit.pointer_jerk,
+					     (int)hit.clicker_jerk, (int)quiet, (int)before);
+			}
+			return hit;
+		}
 		return hit;
 	}
 	for (int i = 0; i < MAX_RINGS; i++) {
@@ -456,7 +500,12 @@ static void handle_packet(const struct rx_item *it)
 	};
 	k_spin_unlock(&ring_lock, key);
 
-	if (tap.fire) {
+	if (tap.fire && tap.solo) {
+		holding = true;
+		hold_until_ms = now + TAP_SOLO_HOLD_MS;
+		usb_io_click(1);
+		proto_printf("I,tap,solo,%d,%d,quiet,%d\n", (int)tap.pointer_jerk, (int)tap.clicker_jerk, (int)tap.quiet_deg);
+	} else if (tap.fire) {
 		int32_t ux, uy;
 
 		holding = true;
@@ -547,7 +596,7 @@ static void print_rings(void)
 static bool receiver_cmd(int argc, char **argv)
 {
 	if (strcmp(argv[0], "help") == 0) {
-		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 tap,0|1 tapcfg[,quiet,rewind,hold,pjerk,cjerk] bootloader\n");
+		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 tap,0|1 tapcfg[,quiet,rewind,hold,pjerk,cjerk] tapsolo[,jerk,quiet,before] bootloader\n");
 		return true;
 	}
 	if (strcmp(argv[0], "tap") == 0 && argc == 2) {
@@ -568,6 +617,18 @@ static bool receiver_cmd(int argc, char **argv)
 		}
 		proto_printf("OK,tapcfg,%d,%u,%u,%d,%d\n", (int)tap_quiet_max_deg, (unsigned int)tap_rewind_ms,
 			     (unsigned int)tap_hold_ms, (int)tap_jerk_pointer, (int)tap_jerk_clicker);
+		return true;
+	}
+	if (strcmp(argv[0], "tapsolo") == 0) {
+		if (argc == 4) {
+			tap_solo_jerk = strtof(argv[1], NULL);
+			tap_solo_quiet_deg = strtof(argv[2], NULL);
+			tap_solo_before_deg = strtof(argv[3], NULL);
+		} else if (argc != 1) {
+			proto_printf("ERR,tapsolo,give jerk,quiet_deg,before_deg (jerk 0 = off)\n");
+			return true;
+		}
+		proto_printf("OK,tapsolo,%d,%d,%d\n", (int)tap_solo_jerk, (int)tap_solo_quiet_deg, (int)tap_solo_before_deg);
 		return true;
 	}
 	if (strcmp(argv[0], "raw") == 0 && argc == 2) {
