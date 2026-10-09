@@ -149,16 +149,17 @@ static uint32_t engine_cfg_gen;
  * ignored while the fingers open again. The ring that drives the cursor is
  * the pointer; any other ring is a clicker.
  */
-#define TAP_JERK_POINTER 1000.0f /* |accel| change on the pointer ring, LSB per ms */
-#define TAP_JERK_CLICKER 300.0f  /* on a clicker ring */
 #define TAP_WINDOW_MS 50         /* the two shocks must both fall within this */
 #define TAP_QUIET_FROM_MS 400    /* the pointer ring's rotation in [now-400, now-150) ms ... */
 #define TAP_QUIET_TO_MS 150
-#define TAP_QUIET_MAX_DEG 20.0f  /* ... must stay under this for a shock to be a tap */
-#define TAP_REWIND_MS 150        /* motion before the pointer ring's shock that is undone */
-#define TAP_HOLD_MS 350          /* motion ignored after the click (fingers opening) */
 #define TAP_REFRACTORY_MS 600    /* the fingers opening again is not a second tap */
 #define HIST_LEN 512             /* ms of motion remembered (power of two) */
+/* Tunable live with `tapcfg,<quiet deg>,<rewind ms>,<hold ms>,<pointer jerk>,<clicker jerk>` (not saved). */
+static float tap_jerk_pointer = 1000.0f; /* |accel| change on the pointer ring, LSB per ms */
+static float tap_jerk_clicker = 300.0f;  /* on a clicker ring */
+static float tap_quiet_max_deg = 20.0f;  /* rotation in the quiet window must stay under this for a shock to be a tap */
+static uint32_t tap_rewind_ms = 150;     /* motion before the pointer ring's shock that is undone */
+static uint32_t tap_hold_ms = 350;       /* motion ignored after the click (fingers opening) */
 
 static atomic_t tap_on = ATOMIC_INIT(1);
 static int32_t hist_x[HIST_LEN], hist_y[HIST_LEN]; /* cursor motion sent, per millisecond */
@@ -198,10 +199,12 @@ static void record_rotation(const struct pe_output *out, uint32_t now)
 {
 	float deg = sqrtf(out->dangle_deg[0] * out->dangle_deg[0] + out->dangle_deg[1] * out->dangle_deg[1] +
 			  out->dangle_deg[2] * out->dangle_deg[2]);
+	hist_advance(now); /* clears the slot for `now` first: before 2026-10-09 the stale value from 512 ms ago was
+			    * read back in, so the "quiet" rotation grew for as long as the hand kept moving and every
+			    * tap was refused after the first minute */
 	uint32_t k = now & (HIST_LEN - 1);
 	uint32_t v = hist_rot[k] + (uint32_t)(deg * 100.0f + 0.5f);
 
-	hist_advance(now);
 	hist_rot[k] = (uint16_t)MIN(v, UINT16_MAX);
 }
 
@@ -259,7 +262,7 @@ static void jerk_update(struct ring_slot *s, const int16_t a[3], uint32_t t_us, 
 		float dt_ms = MAX((float)(t_us - s->accel_us) / 1000.0f, 0.5f);
 		float jerk = fabsf(mag - s->accel_mag) / dt_ms;
 
-		if (jerk > TAP_JERK_CLICKER) {
+		if (jerk > tap_jerk_clicker) {
 			if (now - s->jerk_ms > TAP_WINDOW_MS) {
 				s->jerk_ms = now;  /* the first sample of a new shock */
 				s->jerk = jerk;
@@ -283,7 +286,7 @@ static struct tap_hit tap_check(uint32_t now)
 	}
 	struct ring_slot *a = &rings[active];
 
-	if (a->jerk_ms == 0 || now - a->jerk_ms > TAP_WINDOW_MS || a->jerk < TAP_JERK_POINTER) {
+	if (a->jerk_ms == 0 || now - a->jerk_ms > TAP_WINDOW_MS || a->jerk < tap_jerk_pointer) {
 		return hit;
 	}
 	for (int i = 0; i < MAX_RINGS; i++) {
@@ -298,7 +301,7 @@ static struct tap_hit tap_check(uint32_t now)
 		hit.pointer_jerk_ms = a->jerk_ms;
 		hit.quiet_deg = rotation_between(TAP_QUIET_FROM_MS + (now - a->jerk_ms),
 						 TAP_QUIET_TO_MS + (now - a->jerk_ms), now);
-		hit.fire = hit.quiet_deg < TAP_QUIET_MAX_DEG;
+		hit.fire = hit.quiet_deg < tap_quiet_max_deg;
 		a->jerk_ms = o->jerk_ms = 0;
 		if (hit.fire) {
 			last_click_ms = now;
@@ -457,8 +460,8 @@ static void handle_packet(const struct rx_item *it)
 		int32_t ux, uy;
 
 		holding = true;
-		hold_until_ms = now + TAP_HOLD_MS;
-		rewind_motion(TAP_REWIND_MS + (now - tap.pointer_jerk_ms), now, &ux, &uy);
+		hold_until_ms = now + tap_hold_ms;
+		rewind_motion(tap_rewind_ms + (now - tap.pointer_jerk_ms), now, &ux, &uy);
 		usb_io_click(1);
 		proto_printf("I,tap,%d,%d,%d,quiet,%d,rewind,%d,%d\n", (int)tap.pointer_jerk, (int)tap.clicker_jerk,
 			     (int)tap.dt_ms, (int)tap.quiet_deg, (int)ux, (int)uy);
@@ -544,12 +547,27 @@ static void print_rings(void)
 static bool receiver_cmd(int argc, char **argv)
 {
 	if (strcmp(argv[0], "help") == 0) {
-		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 tap,0|1 bootloader\n");
+		proto_printf("I,help,receiver commands: rings ring,<id> ring,auto raw,0|1 tap,0|1 tapcfg[,quiet,rewind,hold,pjerk,cjerk] bootloader\n");
 		return true;
 	}
 	if (strcmp(argv[0], "tap") == 0 && argc == 2) {
 		atomic_set(&tap_on, strcmp(argv[1], "0") != 0);
 		proto_printf("OK,tap,%d\n", (int)atomic_get(&tap_on));
+		return true;
+	}
+	if (strcmp(argv[0], "tapcfg") == 0) {
+		if (argc == 6) {
+			tap_quiet_max_deg = strtof(argv[1], NULL);
+			tap_rewind_ms = MIN((uint32_t)strtoul(argv[2], NULL, 10), HIST_LEN);
+			tap_hold_ms = (uint32_t)strtoul(argv[3], NULL, 10);
+			tap_jerk_pointer = strtof(argv[4], NULL);
+			tap_jerk_clicker = strtof(argv[5], NULL);
+		} else if (argc != 1) {
+			proto_printf("ERR,tapcfg,give quiet_deg,rewind_ms,hold_ms,pointer_jerk,clicker_jerk\n");
+			return true;
+		}
+		proto_printf("OK,tapcfg,%d,%u,%u,%d,%d\n", (int)tap_quiet_max_deg, (unsigned int)tap_rewind_ms,
+			     (unsigned int)tap_hold_ms, (int)tap_jerk_pointer, (int)tap_jerk_clicker);
 		return true;
 	}
 	if (strcmp(argv[0], "raw") == 0 && argc == 2) {

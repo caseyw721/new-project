@@ -1,0 +1,25 @@
+00:30:07 A3 I,tap,1740,469,-38,quiet,18,rewind,-505,-630
+00:30:09 A4 I,tap,4476,422,45,quiet,17,rewind,-429,517
+00:30:10 A5 I,tap,1043,653,-2,quiet,8,rewind,-154,385
+00:30:11 A6 I,tap,1299,725,35,quiet,2,rewind,-203,281
+00:30:13 A7 I,tap,4873,662,-27,quiet,1,rewind,-39,-69
+00:30:14 A8 I,tap,4166,477,-11,quiet,2,rewind,-537,-111
+00:30:16 A9 I,tap,1088,431,19,quiet,1,rewind,169,35
+00:30:18 A9 I,tap,no,1109,306,-13,quiet,36
+00:30:18 A9 I,tap,no,1822,459,2,quiet,39
+00:30:18 A10 I,tap,no,1586,394,50,quiet,59
+00:30:19 A11 I,tap,1698,415,1,quiet,10,rewind,-442,-106
+00:30:23 A13 I,tap,1147,5444,2,quiet,2,rewind,-441,326
+00:30:26 A15 I,tap,1467,332,33,quiet,3,rewind,-796,697
+00:30:27 B-intro I,tap,4985,389,4,quiet,4,rewind,-800,207
+00:30:51 C1 I,tap,1340,359,-13,quiet,3,rewind,-487,334
+00:30:56 C2 I,tap,1288,1031,-3,quiet,4,rewind,-372,89
+00:30:58 C3 I,tap,1147,1418,5,quiet,3,rewind,-231,56
+00:31:03 C4 I,tap,1514,391,-32,quiet,2,rewind,-289,44
+00:31:05 C5 I,tap,3380,466,-2,quiet,8,rewind,-244,179
+00:31:09 C6 I,tap,2865,854,5,quiet,4,rewind,-297,93
+00:31:12 C7 I,tap,1255,355,-25,quiet,2,rewind,-7,-3
+00:31:17 C8 I,tap,1214,373,-38,quiet,1,rewind,79,-71
+00:31:19 C9 I,tap,3378,539,23,quiet,4,rewind,-177,207
+00:31:24 C10 I,tap,3352,900,48,quiet,5,rewind,-283,2
+recorded run2 packets per ring: {'29c3': 64527, 'aa2c': 16921}
